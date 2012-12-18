@@ -407,7 +407,7 @@ class Log(val dir: File,
                                    startOffset = newOffset,
                                    indexIntervalBytes = indexIntervalBytes, 
                                    maxIndexSize = maxIndexSize)
-      val prev = segments.put(segment.baseOffset, segment)
+      val prev = addSegment(segment)
       if(prev != null)
         throw new KafkaException("Trying to roll a new log segment for topic partition %s with start offset %d while it already exists.".format(dir.getName, newOffset))
       segment
@@ -480,11 +480,10 @@ class Log(val dir: File,
     lock synchronized {
       val segmentsToDelete = logSegments.toList
       segmentsToDelete.foreach(deleteSegment(_))
-      segments.put(newOffset, 
-                   new LogSegment(dir, 
-                                  newOffset,
-                                  indexIntervalBytes = indexIntervalBytes, 
-                                  maxIndexSize = maxIndexSize))
+      addSegment(new LogSegment(dir, 
+                                newOffset,
+                                indexIntervalBytes = indexIntervalBytes, 
+                                maxIndexSize = maxIndexSize))
       this.nextOffset.set(newOffset)
     }
   }
@@ -539,6 +538,24 @@ class Log(val dir: File,
       }
       scheduler.schedule("delete-log-segment", asyncDeleteFiles, delay = segmentDeleteDelayMs)
     }
+  }
+  
+  /**
+   * Add the given segment to the segments in this log replacing any existing segment with the same base offset
+   * @param segment The segment to add
+   * @return The segment replaced (or none if there was no segment with that base offset)
+   */
+  def addSegment(segment: LogSegment): LogSegment = 
+    this.segments.put(segment.baseOffset, segment)
+  
+  /**
+   * Remove the given segment from the log
+   * @param segment The segment to remove
+   * @return True iff that segment was in the log and was deleted.
+   */
+  def removeSegment(segment: LogSegment): Boolean = {
+    val removed = segments.remove(segment.baseOffset)
+    removed != null
   }
   
 }

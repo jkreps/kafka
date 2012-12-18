@@ -20,6 +20,7 @@ import kafka.cluster.{Broker, Partition, Replica}
 import collection._
 import mutable.HashMap
 import org.I0Itec.zkclient.ZkClient
+import java.io.{File, IOException}
 import java.util.concurrent.atomic.AtomicBoolean
 import kafka.utils._
 import kafka.log.LogManager
@@ -33,6 +34,7 @@ import kafka.controller.KafkaController
 
 object ReplicaManager {
   val UnknownLogEndOffset = -1L
+  val HighWatermarkFilename = ".highwatermark"
 }
 
 class ReplicaManager(val config: KafkaConfig, 
@@ -48,7 +50,7 @@ class ReplicaManager(val config: KafkaConfig,
   val replicaFetcherManager = new ReplicaFetcherManager(config, this)
   this.logIdent = "Replica Manager on Broker " + config.brokerId + ": "
   private val highWatermarkCheckPointThreadStarted = new AtomicBoolean(false)
-  val highWatermarkCheckpoints = config.logDirs.map(dir => (dir, new HighwaterMarkCheckpoint(dir))).toMap
+  val highWatermarkCheckpoints = config.logDirs.map(dir => (dir, new OffsetCheckpoint(new File(dir, "replication-offset-checkpoint")))).toMap
 
   newGauge(
     "LeaderCount",
@@ -265,7 +267,13 @@ class ReplicaManager(val config: KafkaConfig,
     val replicasByDir = replicas.filter(_.log.isDefined).groupBy(_.log.get.dir.getParent)
     for((dir, reps) <- replicasByDir) {
       val hwms = reps.map(r => (TopicAndPartition(r.topic, r.partitionId) -> r.highWatermark)).toMap
-      highWatermarkCheckpoints(dir).write(hwms)
+      try {
+        highWatermarkCheckpoints(dir).write(hwms)
+      } catch {
+        case e: IOException =>
+          fatal("Error writing to highwatermark file: " + e.getMessage)
+          Runtime.getRuntime().halt(1)
+      }
     }
   }
 

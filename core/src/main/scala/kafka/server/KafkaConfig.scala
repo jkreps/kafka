@@ -103,9 +103,21 @@ class KafkaConfig private (val props: VerifiableProperties) extends ZKConfig(pro
 
   /* the maximum size of the log for some specific topic before deleting it */
   val logRetentionSizeMap = props.getMap("topic.log.retention.size", _.toLong > 0).mapValues(_.toLong)
-
+  
   /* the frequency in minutes that the log cleaner checks whether any log is eligible for deletion */
-  val logCleanupIntervalMinutes = props.getIntInRange("log.cleanup.interval.mins", 10, (1, Int.MaxValue))
+  val logCleanupIntervalMinutes = props.getLongInRange("log.retention.check.interval.ms", 5*60*1000, (1, Long.MaxValue))
+  
+  /* the default cleanup policy for segments beyond the retention window */
+  val logCleanupPolicy = props.getString("log.cleanup.policy", "delete")
+  
+  /* a per-topic override for the cleanup policy for segments beyond the retention window */
+  val logCleanupPolicyMap = props.getMap("topic.log.cleanup.policy")
+  
+  /* wait until the head of the log exceeds log.cleaner.backoff.factor before deduplicating the log */
+  val logCleanerBackoffFactor = props.getDouble("log.cleaner.backoff.factor")
+  
+  /* the number of background threads to use for log cleaning */
+  val logCleanerThreads = props.getIntInRange("log.cleaner.threads", 1, (0, Int.MaxValue))
   
   /* the maximum size in bytes of the offset index */
   val logIndexMaxSizeBytes = props.getIntInRange("log.index.max.size", 10*1024*1024, (4, Int.MaxValue))

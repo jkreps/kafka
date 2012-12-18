@@ -22,7 +22,7 @@ import org.scalatest.junit.JUnit3Suite
 import org.easymock.EasyMock
 import org.junit._
 import org.junit.Assert._
-import kafka.common.KafkaException
+import kafka.common._
 import kafka.cluster.Replica
 import kafka.utils._
 
@@ -133,7 +133,7 @@ class HighwatermarkPersistenceTest extends JUnit3Suite {
   }
 
   def hwmFor(replicaManager: ReplicaManager, topic: String, partition: Int): Long = {
-    replicaManager.highWatermarkCheckpoints(replicaManager.config.logDirs(0)).read(topic, partition)
+    replicaManager.highWatermarkCheckpoints(replicaManager.config.logDirs(0)).read.getOrElse(TopicAndPartition(topic, partition), 0L)
   }
   
 }

@@ -230,6 +230,11 @@ class FileMessageSet private[kafka](val file: File,
     _size.set(targetSize)
   }
   
+  def readInto(buffer: ByteBuffer, offset: Int): ByteBuffer = {
+    channel.read(buffer, offset)
+    buffer
+  }
+  
 }
 
 object LogFlushStats extends KafkaMetricsGroup {
