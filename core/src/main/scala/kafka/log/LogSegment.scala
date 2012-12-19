@@ -79,7 +79,7 @@ class LogSegment(val log: FileMessageSet,
    * @return The position in the log storing the message with the least offset >= the requested offset or null if no message meets this criteria.
    */
   @threadsafe
-  private def translateOffset(offset: Long, startingFilePosition: Int = 0): OffsetPosition = {
+  private[log] def translateOffset(offset: Long, startingFilePosition: Int = 0): OffsetPosition = {
     val mapping = index.lookup(offset)
     log.searchFor(offset, max(mapping.position, startingFilePosition))
   }

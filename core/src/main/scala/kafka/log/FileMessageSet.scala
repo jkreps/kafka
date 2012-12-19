@@ -230,8 +230,12 @@ class FileMessageSet private[kafka](val file: File,
     _size.set(targetSize)
   }
   
-  def readInto(buffer: ByteBuffer, offset: Int): ByteBuffer = {
-    channel.read(buffer, offset)
+  /**
+   * Read from the underlying file into the buffer starting at the given position
+   */
+  def readInto(buffer: ByteBuffer, position: Int): ByteBuffer = {
+    channel.read(buffer, position)
+    buffer.rewind()
     buffer
   }
   

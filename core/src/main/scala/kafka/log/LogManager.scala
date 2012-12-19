@@ -57,6 +57,15 @@ class LogManager(val config: KafkaConfig,
 
   this.logIdent = "[Log Manager on Broker " + config.brokerId + "] "
   private val logs = new Pool[TopicAndPartition, Log]()
+  private val cleaner = new Cleaner(logs = logs, 
+                                    logDirs = logDirs, 
+                                    defaultCleanupPolicy = config.logCleanupPolicy, 
+                                    topicCleanupPolicy = config.logCleanupPolicyMap, 
+                                    threads = config.logCleanerThreads, 
+                                    bufferSize = config.logCleanerIoBufferSize, 
+                                    minDirtyMessages = 0L, /* TODO: Figure this out */
+                                    maxCleanerBytesPerSecond = config.logCleanerIoMaxBytesPerSecond, 
+                                    time = time)
   
   createAndValidateLogDirs(logDirs)
   private var dirLocks = lockLogDirs(logDirs)
@@ -156,6 +165,26 @@ class LogManager(val config: KafkaConfig,
                          period = config.flushSchedulerThreadRate, 
                          TimeUnit.MILLISECONDS)
     }
+    cleaner.startup()
+  }
+  
+  /**
+   * Close all the logs
+   */
+  def shutdown() {
+    debug("Shutting down.")
+    try {
+      // stop the cleaner first
+      Utils.swallow(cleaner.shutdown())
+      // close the logs
+      allLogs.foreach(_.close())
+      // mark that the shutdown was clean by creating the clean shutdown marker file
+      logDirs.foreach(dir => Utils.swallow(new File(dir, CleanShutdownFile).createNewFile()))
+    } finally {
+      // regardless of whether the close succeeded, we need to unlock the data directories
+      dirLocks.foreach(_.destroy())
+    }
+    debug("Shutdown complete.")
   }
   
   /**
@@ -280,23 +309,6 @@ class LogManager(val config: KafkaConfig,
     }
     debug("Log cleanup completed. " + total + " files deleted in " +
                   (time.milliseconds - startMs) / 1000 + " seconds")
-  }
-
-  /**
-   * Close all the logs
-   */
-  def shutdown() {
-    debug("Shutting down.")
-    try {
-      // close the logs
-      allLogs.foreach(_.close())
-      // mark that the shutdown was clean by creating the clean shutdown marker file
-      logDirs.foreach(dir => Utils.swallow(new File(dir, CleanShutdownFile).createNewFile()))
-    } finally {
-      // regardless of whether the close succeeded, we need to unlock the data directories
-      dirLocks.foreach(_.destroy())
-    }
-    debug("Shutdown complete.")
   }
 
   /**

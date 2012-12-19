@@ -17,30 +17,9 @@
 
 package kafka.log
 
-import java.util.Arrays
-import java.util.concurrent._
-import java.security.MessageDigest
-import java.nio.ByteBuffer
-import kafka.utils.Utils
+/**
+ * Tests for the log cleaner
+ */
+class CleanerTest {
 
-class SkimpyOffsetMap() {
-  val map = new ConcurrentHashMap[ByteBuffer, Long]
-  
-  def put(key: ByteBuffer, offset: Long): Unit = map.put(key, offset)
-  
-  def get(key: ByteBuffer): Long = map.get(key)
-  
-  def clear() = map.clear()
-  
-  case class SkimpyMapKey(val bytes: Array[Byte]) {
-    override def hashCode: Int = Arrays.hashCode(bytes)
-    override def equals(t: Any): Boolean = {
-      t match {
-        case null => false
-        case key: SkimpyMapKey => Arrays.equals(bytes, key.bytes)
-        case _ => false
-      }
-    }
-  }
-  
 }

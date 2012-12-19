@@ -96,8 +96,8 @@ class Log(val dir: File,
         if(!file.canRead)
           throw new IOException("Could not read file " + file)
         val filename = file.getName
-        if(filename.endsWith(DeletedFileSuffix)) {
-          // if the file ends in .deleted, delete it
+        if(filename.endsWith(DeletedFileSuffix) || filename.endsWith(CleanedFileSuffix)) {
+          // if the file ends in .deleted or .cleaned, delete it
           val deleted = file.delete()
           if(!deleted)
             warn("Attempt to delete defunct segment file %s failed.".format(filename))
@@ -503,6 +503,12 @@ class Log(val dir: File,
    */
   def logSegments: Iterable[LogSegment] = asIterable(segments.values)
   
+  /**
+   * Get all segments beginning with the segment that includes "from" and ending with the segment
+   * that includes "to" or the end of the log (if to > logEndOffset)
+   */
+  def logSegments(from: Long, to: Long) = asIterable(segments.subMap(from, true, to, true).values)
+  
   override def toString() = "Log(" + this.dir + ")"
   
   /**
@@ -517,7 +523,7 @@ class Log(val dir: File,
    * 
    * @param segment The log segment to schedule for deletion
    */
-  private def deleteSegment(segment: LogSegment) {
+  private[log] def deleteSegment(segment: LogSegment) {
     info("Scheduling log segment %d for log %s for deletion.".format(segment.baseOffset, dir.getName))
     lock synchronized {
       segments.remove(segment.baseOffset)
@@ -567,6 +573,7 @@ object Log {
   val LogFileSuffix = ".log"
   val IndexFileSuffix = ".index"
   val DeletedFileSuffix = ".deleted"
+  val CleanedFileSuffix = ".cleaned"
 
   /**
    * Make log segment file name from offset bytes. All this does is pad out the offset number with zeros
