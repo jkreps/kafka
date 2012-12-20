@@ -61,7 +61,7 @@ class LogManager(val config: KafkaConfig,
                                     logDirs = logDirs, 
                                     defaultCleanupPolicy = config.logCleanupPolicy, 
                                     topicCleanupPolicy = config.logCleanupPolicyMap, 
-                                    threads = config.logCleanerThreads, 
+                                    numThreads = config.logCleanerThreads, 
                                     bufferSize = config.logCleanerIoBufferSize, 
                                     minDirtyMessages = 0L, /* TODO: Figure this out */
                                     maxCleanerBytesPerSecond = config.logCleanerIoMaxBytesPerSecond, 

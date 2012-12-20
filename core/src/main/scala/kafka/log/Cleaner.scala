@@ -41,8 +41,8 @@ import kafka.utils._
  * @param maxCleanerBytesPerSecond The maximum bytes/second of I/O (read or write) that the cleaner can process
  * @param time A way to control the passage of time
  */
-class Cleaner(logs: Pool[TopicAndPartition, Log], 
-              logDirs: Seq[File], 
+class Cleaner(val logs: Pool[TopicAndPartition, Log], 
+              val logDirs: Seq[File], 
               defaultCleanupPolicy: String,
               topicCleanupPolicy: Map[String, String],
               numThreads: Int = 1,
@@ -108,15 +108,19 @@ class Cleaner(logs: Pool[TopicAndPartition, Log],
     * every time off the full set of logs to allow logs to be dynamically added to the pool of logs
     * the log manager maintains.
     */
-  private def chooseFilthiestLog(): LogToClean = {
+  private def grabFilthiestLog(): LogToClean = {
     lock synchronized {
       val lastClean = checkpoints.values.flatMap(_.read()).toMap
       def isDedupe(topic: String) = topicCleanupPolicy.getOrElse(topic, defaultCleanupPolicy).toLowerCase == "dedupe"
       val eligableLogs = logs.filter(l => isDedupe(l._1.topic))
       val cleanableLogs = eligableLogs.map(l => LogToClean(l._1, l._2, lastClean.getOrElse(l._1, 0)))
-      val toClean = cleanableLogs.min
-      inProgress += toClean.topicPartition
-      toClean
+      if(cleanableLogs.isEmpty) {
+        null
+      } else {
+        val toClean = cleanableLogs.min
+        inProgress += toClean.topicPartition
+        toClean
+      }
     }
   }
   
@@ -155,7 +159,7 @@ class Cleaner(logs: Pool[TopicAndPartition, Log],
     override def run() {
       while(true) {
         try {
-          val cleanable = chooseFilthiestLog()
+          val cleanable = grabFilthiestLog()
           if(cleanable == null)
             // there are no cleanable logs, sleep for a good while--it is possible someone will create a new one, but not that likely
             time.sleep(NoLogsToCleanBackOffMs)

@@ -16,6 +16,7 @@
  */
 package kafka.server
 
+import scala.collection._
 import kafka.utils.Logging
 import kafka.common._
 import java.util.concurrent.locks.ReentrantLock
@@ -27,6 +28,7 @@ import java.io._
 class OffsetCheckpoint(val file: File) extends Logging {
   private val lock = new Object()
   new File(file + ".tmp").delete() // try to delete any existing temp files for cleanliness
+  file.createNewFile() // in case the file doesn't exist
 
   def write(offsets: Map[TopicAndPartition, Long]) {
     lock synchronized {
@@ -63,12 +65,18 @@ class OffsetCheckpoint(val file: File) extends Logging {
     lock synchronized {
       val reader = new BufferedReader(new FileReader(file))
       try {
-        val version = reader.readLine().toInt
+        var line = reader.readLine()
+        if(line == null)
+          return Map.empty
+        val version = line.toInt
         version match {
           case 0 =>
-            val expectedSize = reader.readLine().toInt
+            line = reader.readLine()
+            if(line == null)
+              return Map.empty
+            val expectedSize = line.toInt
             var offsets = Map[TopicAndPartition, Long]()
-            var line = reader.readLine()
+            line = reader.readLine()
             while(line != null) {
               val pieces = line.split("\\s+")
               if(pieces.length != 3)
