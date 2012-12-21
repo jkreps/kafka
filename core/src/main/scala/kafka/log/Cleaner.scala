@@ -112,13 +112,13 @@ class Cleaner(val logs: Pool[TopicAndPartition, Log],
     lock synchronized {
       val lastClean = checkpoints.values.flatMap(_.read()).toMap
       def isDedupe(topic: String) = topicCleanupPolicy.getOrElse(topic, defaultCleanupPolicy).toLowerCase == "dedupe"
-      println(logs.map(l => (l._1.topic, isDedupe(l._1.topic))))
-      val eligableLogs = logs.filter(l => isDedupe(l._1.topic))
-      val cleanableLogs = eligableLogs.map(l => LogToClean(l._1, l._2, lastClean.getOrElse(l._1, 0)))
-      if(cleanableLogs.isEmpty) {
+      val dedupeLogs = logs.filter(l => isDedupe(l._1.topic))
+      val cleanableLogs = dedupeLogs.map(l => LogToClean(l._1, l._2, lastClean.getOrElse(l._1, 0)))
+      val multisegmentLogs = cleanableLogs.filter(_.log.numberOfSegments > 1)
+      if(multisegmentLogs.isEmpty) {
         null
       } else {
-        val toClean = cleanableLogs.min
+        val toClean = multisegmentLogs.min
         inProgress += toClean.topicPartition
         toClean
       }
@@ -170,7 +170,10 @@ class Cleaner(val logs: Pool[TopicAndPartition, Log],
           else
             clean(cleanable)
         } catch {
-          case e: Exception => error("Uncaught exception in log cleaner: ", e)
+          case e: OptimisticLockFailureException => 
+            info("Cleaning of log was aborted due to truncate operation.")
+          case e: Exception => 
+            error("Uncaught exception in log cleaner: ", e)
         }
       }
     }
@@ -181,12 +184,13 @@ class Cleaner(val logs: Pool[TopicAndPartition, Log],
       info("Log cleaner %d beginning cleaning of %s-%d.".format(id, topic, part))
       val start = time.milliseconds
       val log = cleanable.log
+      val truncateCount = log.numberOfTruncates
       val segments = log.logSegments
       val dataDir = log.dir.getParentFile
       val endOffset = segments.last.baseOffset - 1
       buildOffsetMap(log, cleanable.lastCleanOffset, endOffset, offsetMap)
-      for (group <- groupSegmentsForCleaning(segments.dropRight(1), log.maxSegmentSize))
-        cleanSegments(log, group, offsetMap)
+      for (group <- groupSegmentsBySize(segments.dropRight(1), log.maxSegmentSize, log.maxIndexSize))
+        cleanSegments(log, group, offsetMap, truncateCount)
       saveCleanerOffset(cleanable.topicPartition, dataDir, endOffset)
       doneCleaning(cleanable.topicPartition)
       val ellapsed = time.milliseconds - start
@@ -194,27 +198,31 @@ class Cleaner(val logs: Pool[TopicAndPartition, Log],
     }
     
     /* Group log segments into groups of size < max segment size */
-    private def groupSegmentsForCleaning(segments: Iterable[LogSegment], maxSize: Int): Seq[Seq[LogSegment]] = {
-      var grouped = mutable.ArrayBuffer[Seq[LogSegment]]()
-      var size = 0L
-      var curr = mutable.ArrayBuffer[LogSegment]()
-      for (seg <- segments) {
-        if (size + seg.size < maxSize) {
-          curr += seg
-          size += seg.size
-        } else {
-          grouped += curr.toSeq
-          size = 0
-          curr = mutable.ArrayBuffer(seg)
+    private def groupSegmentsBySize(segments: Iterable[LogSegment], maxSize: Int, maxIndexSize: Int): List[Seq[LogSegment]] = {
+      var grouped = List[List[LogSegment]]()
+      var segs = segments.toList
+      while(!segs.isEmpty) {
+        var group = List(segs.head)
+        var logSize = segs.head.size
+        var indexSize = 8 * segs.head.index.entries
+        segs = segs.tail
+        while(!segs.isEmpty && 
+              logSize + segs.head.size < maxSize && 
+              indexSize + 8 * segs.head.index.entries < maxIndexSize) {
+          group = segs.head :: group
+          logSize += segs.head.size
+          indexSize += 8 * segs.head.index.entries
+          segs = segs.tail
         }
+        grouped ::= group
       }
       grouped
     }
 
-    private def cleanSegments(log: Log, segments: Seq[LogSegment], map: SkimpyOffsetMap) {
+    private def cleanSegments(log: Log, segments: Seq[LogSegment], map: SkimpyOffsetMap, expectedTruncateCount: Int) {
       // create a new segment with the suffix .cleaned appended to both the log and index name
-      val messages = new FileMessageSet(new File(segments.head.log.file.getPath + ".cleaned"))
-      val index = new OffsetIndex(new File(segments.head.index.file.getPath + ".cleaned"), segments.head.baseOffset, segments.head.index.maxIndexSize)
+      val messages = new FileMessageSet(new File(segments.head.log.file.getPath + Log.CleanedFileSuffix))
+      val index = new OffsetIndex(new File(segments.head.index.file.getPath + Log.CleanedFileSuffix), segments.head.baseOffset, segments.head.index.maxIndexSize)
       val cleaned = new LogSegment(messages, index, segments.head.baseOffset, segments.head.indexIntervalBytes, SystemTime)
 
       // clean segments into the new desitnation segment
@@ -222,17 +230,20 @@ class Cleaner(val logs: Pool[TopicAndPartition, Log],
         cleanInto(old, cleaned, map)
 
       // swap in new segment
-      swap(log, cleaned, segments)
+      info("Swapping in cleaned segment %d for {%s} in log %s.".format(cleaned.baseOffset, segments.map(_.baseOffset).mkString(", "), log.name))
+      log.swapSegments(cleaned, segments, expectedTruncateCount)
     }
     
     private def buildOffsetMap(log: Log, start: Long, end: Long, map: SkimpyOffsetMap) {
       map.clear()
+      info("Building offset map for log %s from offset %d to %d.".format(log.name, start, end))
       for(segment <- log.logSegments(start, end)) {
         buildOffsetMap(segment, start, end, map)
       }
     }
     
     private def buildOffsetMap(segment: LogSegment, start: Long, end: Long, map: SkimpyOffsetMap) {
+      info("Building offset map for segment %d between %d and %d.".format(segment.baseOffset, start, end))
       var mapping = segment.translateOffset(start)
       var position = if(mapping == null) 0 else mapping.position
       while(position < segment.log.size) {
@@ -259,23 +270,16 @@ class Cleaner(val logs: Pool[TopicAndPartition, Log],
         val messages = new ByteBufferMessageSet(source.log.readInto(buffer, position))
         throttler.maybeThrottle(messages.sizeInBytes)
         for (entry <- messages) {
-          val size = MessageSet.entrySize(entry.message)
-          position += size
-          dest.append(entry.offset, new ByteBufferMessageSet(compressionCodec = NoCompressionCodec, offsetCounter = new AtomicLong(entry.offset), messages = Array(entry.message): _*))
-          throttler.maybeThrottle(size)
+          val lastOffset = map.get(entry.message.key)
+          // recopy the record only if it doesn't appear at a later offset
+          if(lastOffset < 0 || entry.offset >= lastOffset) {
+            val size = MessageSet.entrySize(entry.message)
+            position += size
+            dest.append(entry.offset, new ByteBufferMessageSet(compressionCodec = NoCompressionCodec, offsetCounter = new AtomicLong(entry.offset), messages = Array(entry.message): _*))
+            throttler.maybeThrottle(size)
+          }
         }
       }
-    }
-
-    /**
-     * Add in the new segment and remove all the old segments
-     */
-    private def swap(log: Log, segment: LogSegment, oldSegments: Seq[LogSegment]) {
-      info("Swapping in cleaned segment %d for {%s} in log %s.".format(segment.baseOffset, oldSegments.map(_.baseOffset).mkString(", "), log.name))
-      // since we add the new segment first, and since the data is equivalent, we don't need a lock here
-      log.addSegment(segment)
-      for (s <- oldSegments.tail)
-        log.removeSegment(s)
     }
   }
 }

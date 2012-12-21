@@ -167,18 +167,20 @@ class LogSegment(val log: FileMessageSet,
    * Truncate off all index and log entries with offsets >= the given offset.
    * If the given offset is larger than the largest message in this segment, do nothing.
    * @param offset The offset to truncate to
+   * @return The number of log bytes truncated
    */
   @nonthreadsafe
-  def truncateTo(offset: Long) {
+  def truncateTo(offset: Long): Int = {
     val mapping = translateOffset(offset)
     if(mapping == null)
-      return
+      return 0
     index.truncateTo(offset)
     // after truncation, reset and allocate more space for the (new currently  active) index
     index.resize(index.maxIndexSize)
-    log.truncateTo(mapping.position)
-    if (log.sizeInBytes == 0)
+    val bytesTruncated = log.truncateTo(mapping.position)
+    if(log.sizeInBytes == 0)
       created = time.milliseconds
+    bytesTruncated
   }
   
   /**
@@ -207,6 +209,18 @@ class LogSegment(val log: FileMessageSet,
       log.flush()
       index.flush()
     }
+  }
+  
+  /**
+   * Change the suffix for the index and log file for this log segment
+   */
+  def changeFileSuffixes(oldSuffix: String, newSuffix: String) {
+    val logRenamed = log.renameTo(new File(Utils.replaceSuffix(log.file.getPath, oldSuffix, newSuffix)))
+    if(!logRenamed)
+      throw new KafkaStorageException("Failed to change the index file suffix from %s to %s for log segment %d".format(oldSuffix, newSuffix, baseOffset))
+    val indexRenamed = index.renameTo(new File(Utils.replaceSuffix(index.file.getPath, oldSuffix, newSuffix)))
+    if(!indexRenamed)
+      throw new KafkaStorageException("Failed to change the index file suffix from %s to %s for log segment %d".format(oldSuffix, newSuffix, baseOffset))
   }
   
   /**

@@ -73,6 +73,9 @@ class Log(val dir: File,
 
   /* the actual segments of the log */
   private val segments: ConcurrentNavigableMap[Long,LogSegment] = loadSegments()
+  
+  /* The number of times the log has been truncated */
+  private val truncates = new AtomicInteger(0)
     
   /* Calculate the offset of the next message */
   private val nextOffset: AtomicLong = new AtomicLong(activeSegment.nextOffset())
@@ -90,39 +93,55 @@ class Log(val dir: File,
   private def loadSegments(): ConcurrentNavigableMap[Long, LogSegment] = {
     // open all the segments read-only
     val logSegments = new ConcurrentSkipListMap[Long, LogSegment]
-    val ls = dir.listFiles()
-    if(ls != null) {
-      for(file <- ls if file.isFile) {
-        if(!file.canRead)
-          throw new IOException("Could not read file " + file)
-        val filename = file.getName
-        if(filename.endsWith(DeletedFileSuffix) || filename.endsWith(CleanedFileSuffix)) {
-          // if the file ends in .deleted or .cleaned, delete it
-          val deleted = file.delete()
-          if(!deleted)
-            warn("Attempt to delete defunct segment file %s failed.".format(filename))
-        }  else if(filename.endsWith(IndexFileSuffix)) {
-          // if it is an index file, make sure it has a corresponding .log file
-          val logFile = new File(file.getAbsolutePath.replace(IndexFileSuffix, LogFileSuffix))
-          if(!logFile.exists) {
-            warn("Found an orphaned index file, %s, with no corresponding log file.".format(file.getAbsolutePath))
-            file.delete()
-          }
-        } else if(filename.endsWith(LogFileSuffix)) {
-          // if its a log file, load the corresponding log segment
-          val start = filename.substring(0, filename.length - LogFileSuffix.length).toLong
-          val hasIndex = Log.indexFilename(dir, start).exists
-          val segment = new LogSegment(dir = dir, 
-                                       startOffset = start,
-                                       indexIntervalBytes = indexIntervalBytes, 
-                                       maxIndexSize = maxIndexSize)
-          if(!hasIndex) {
-            // this can only happen if someone manually deletes the index file
-            error("Could not find index file corresponding to log file %s, rebuilding index...".format(segment.log.file.getAbsolutePath))
-            segment.recover(maxMessageSize)
-          }
-          logSegments.put(start, segment)
+
+    // create the log directory if it doesn't exist
+    dir.mkdirs()
+    
+    // first do a pass through the files in the log directory and remove any temporary files 
+    // and complete any interrupted swap operations
+    for(file <- dir.listFiles if file.isFile) {
+      if(!file.canRead)
+        throw new IOException("Could not read file " + file)
+      val filename = file.getName
+      if(filename.endsWith(DeletedFileSuffix) || filename.endsWith(CleanedFileSuffix)) {
+        // if the file ends in .deleted or .cleaned, delete it
+        val deleted = file.delete()
+        if(!deleted)
+          warn("Attempt to delete defunct segment file %s failed.".format(filename))
+      } else if(filename.endsWith(SwapFileSuffix)) {
+        // we crashed in the middle of a swap operation, complete it
+        val renamed = file.renameTo(new File(Utils.replaceSuffix(file.getPath, SwapFileSuffix, "")))
+        if(renamed)
+          info("Found log file %s from interrupted swap operation, repairing.".format(file.getPath))
+        else
+          throw new KafkaException("Failed to rename file %s.".format(file.getPath))
+      }
+    }
+
+    // now do a second pass and load all the .log and .index files
+    for(file <- dir.listFiles if file.isFile) {
+      val filename = file.getName
+      if(filename.endsWith(IndexFileSuffix)) {
+        // if it is an index file, make sure it has a corresponding .log file
+        val logFile = new File(file.getAbsolutePath.replace(IndexFileSuffix, LogFileSuffix))
+        if(!logFile.exists) {
+          warn("Found an orphaned index file, %s, with no corresponding log file.".format(file.getAbsolutePath))
+          file.delete()
         }
+      } else if(filename.endsWith(LogFileSuffix)) {
+        // if its a log file, load the corresponding log segment
+        val start = filename.substring(0, filename.length - LogFileSuffix.length).toLong
+        val hasIndex = Log.indexFilename(dir, start).exists
+        val segment = new LogSegment(dir = dir, 
+                                     startOffset = start,
+                                     indexIntervalBytes = indexIntervalBytes, 
+                                     maxIndexSize = maxIndexSize)
+        if(!hasIndex) {
+          // this can only happen if someone manually deletes the index file
+          error("Could not find index file corresponding to log file %s, rebuilding index...".format(segment.log.file.getAbsolutePath))
+          segment.recover(maxMessageSize)
+        }
+        logSegments.put(start, segment)
       }
     }
 
@@ -152,6 +171,11 @@ class Log(val dir: File,
    * Take care! this is an O(n) operation.
    */
   def numberOfSegments: Int = segments.size
+  
+  /**
+   * The number of truncates that have occurred since the log was opened.
+   */
+  def numberOfTruncates: Int = truncates.get
 
   /**
    * Close this log
@@ -468,6 +492,7 @@ class Log(val dir: File,
         activeSegment.truncateTo(targetOffset)
         this.nextOffset.set(targetOffset)
       }
+      truncates.getAndIncrement
     }
   }
     
@@ -527,8 +552,8 @@ class Log(val dir: File,
     info("Scheduling log segment %d for log %s for deletion.".format(segment.baseOffset, dir.getName))
     lock synchronized {
       segments.remove(segment.baseOffset)
-      asyncDeleteFile(segment.log.file)
-      asyncDeleteFile(segment.index.file)
+      segment.changeFileSuffixes("", Log.DeletedFileSuffix)
+      asyncDeleteFiles(segment.log.file, segment.index.file)
     }
   }
   
@@ -536,30 +561,41 @@ class Log(val dir: File,
    * Perform an asynchronous delete on the given file if it exists (otherwise do nothing)
    * @throws KafkaStorageException if the file can't be renamed and still exists 
    */
-  private def asyncDeleteFile(file: File) {
-    val newName = new File(file.getPath + Log.DeletedFileSuffix)
-    val success = file.renameTo(newName)
-    if(!success && file.exists)
-        throw new KafkaStorageException("Failed to rename file %s to %s for log %s.".format(file.getPath, newName.getPath, name))
-    def deleteFile() {
-      info("Deleting file %s for log %s.".format(file.getPath, name))
-      if(!newName.delete())
-        warn("Failed to delete log segment file %s for log %s.".format(newName.getPath, name))
+  private def asyncDeleteFiles(files: File*) {
+    def deleteFiles() {
+      info("Deleting files %s from log %s.".format(files.map(_.getPath).mkString(", "), name))
+      for(file <- files) {
+        val deleted = file.delete()
+        if(!deleted)
+          warn("Failed to delete log segment file %s for log %s.".format(file.getPath, name))
+      }
     }
-    scheduler.schedule("delete-file", deleteFile, delay = segmentDeleteDelayMs)
+    scheduler.schedule("delete-file", deleteFiles, delay = segmentDeleteDelayMs)
   }
   
-  private[log] def swapSegments(newSegments: Seq[LogSegment], oldSegments: Seq[LogSegment]) {
+  /**
+   * Swap a new segment in place and delete one or more existing segments in a crash-safe manner. The old segments will
+   * be asynchronously deleted.
+   * @param newSegment The new log segment to add to the log
+   * @param oldSegments The old log segments to delete from the log
+   */
+  private[log] def swapSegments(newSegment: LogSegment, oldSegments: Seq[LogSegment], expectedTruncates: Int) {
     lock synchronized {
-      val replaced = newSegments.map(addSegment).filter(_ != null)
-      /* for any segments already replaced in the index, just delete their files */
-      for(seg <- replaced) {
-        asyncDeleteFile(seg.log.file)
-        asyncDeleteFile(seg.index.file)
+      if(expectedTruncates != numberOfTruncates)
+        throw new OptimisticLockFailureException("The log has been truncated, expected %d but found %d.".format(expectedTruncates, numberOfTruncates))
+      // need to do this in two phases to be crash safe AND do the delete asynchronously
+      // if we crash in the middle of this we complete the swap in loadSegments()
+      newSegment.changeFileSuffixes(Log.CleanedFileSuffix, Log.SwapFileSuffix) // TODO: kind of hacky to assume this suffix...how to do better?
+      addSegment(newSegment)  
+      for(seg <- oldSegments) {
+        if(newSegment.baseOffset != seg.baseOffset)
+          segments.remove(seg.baseOffset)
+        seg.changeFileSuffixes("", Log.DeletedFileSuffix)
+        asyncDeleteFiles(seg.log.file, seg.index.file)
       }
-      (oldSegments.toSet -- replaced).foreach(deleteSegment)
-    }
-    
+      // okay we are safe now, remove the swap suffix
+      newSegment.changeFileSuffixes(Log.SwapFileSuffix, "")
+    }  
   }
   
   /**
@@ -574,10 +610,21 @@ class Log(val dir: File,
  * Helper functions for logs
  */
 object Log {
+  
+  /** a log file */
   val LogFileSuffix = ".log"
+    
+  /** an index file */
   val IndexFileSuffix = ".index"
+    
+  /** a file that is scheduled to be deleted */
   val DeletedFileSuffix = ".deleted"
+    
+  /** A temporary file that is being used for log cleaning */
   val CleanedFileSuffix = ".cleaned"
+    
+  /** A temporary file used when swapping files into the log */
+  val SwapFileSuffix = ".swap"
 
   /**
    * Make log segment file name from offset bytes. All this does is pad out the offset number with zeros

@@ -38,7 +38,7 @@ import kafka.metrics.{KafkaTimer, KafkaMetricsGroup}
  * @param isSlice Should the start and end parameters be used for slicing?
  */
 @nonthreadsafe
-class FileMessageSet private[kafka](val file: File,
+class FileMessageSet private[kafka](@volatile var file: File,
                                     private[log] val channel: FileChannel,
                                     private[log] val start: Int,
                                     private[log] val end: Int,
@@ -221,13 +221,15 @@ class FileMessageSet private[kafka](val file: File,
    * given size falls on a valid message boundary.
    * @param targetSize The size to truncate to.
    */
-  def truncateTo(targetSize: Int) = {
+  def truncateTo(targetSize: Int): Int = {
     if(targetSize > sizeInBytes || targetSize < 0)
       throw new KafkaException("Attempt to truncate log segment to " + targetSize + " bytes failed, " +
                                " size of this log segment is " + sizeInBytes + " bytes.")
+    val originalSize = size
     channel.truncate(targetSize)
     channel.position(targetSize)
     _size.set(targetSize)
+    originalSize - targetSize
   }
   
   /**
@@ -237,6 +239,16 @@ class FileMessageSet private[kafka](val file: File,
     channel.read(buffer, position)
     buffer.rewind()
     buffer
+  }
+  
+  /**
+   * Rename the file that backs this message set
+   * @return true iff the rename was successful
+   */
+  def renameTo(f: File): Boolean = {
+    val success = this.file.renameTo(f)
+    this.file = f
+    success
   }
   
 }

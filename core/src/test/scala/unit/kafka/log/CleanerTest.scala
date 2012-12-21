@@ -30,7 +30,7 @@ import org.scalatest.junit.JUnitSuite
 class CleanerTest extends JUnitSuite {
   
   val time = new MockTime()
-  val segmentSize = 100
+  val segmentSize = 10000
   val deleteDelay = 1000
   val logDir = TestUtils.tempDir()
   val log1 = TopicAndPartition("log", 1)
@@ -42,16 +42,16 @@ class CleanerTest extends JUnitSuite {
     val log = cleaner.logs.get(log1)
     // add messages
     for(i <- 0 until 3; j <- 0 until 100) {
-      log.append(TestUtils.singleMessageSet(j.toString.getBytes), assignOffsets = true)
-      log.append(TestUtils.singleMessageSet(j.toString.getBytes), assignOffsets = true) 
+      log.append(TestUtils.singleMessageSet(payload = j.toString.getBytes, key = j.toString.getBytes), assignOffsets = true)
+      log.append(TestUtils.singleMessageSet(payload = j.toString.getBytes, key = j.toString.getBytes), assignOffsets = true) 
     }
     cleaner.startup()
     cleaner.awaitCleaned(1)
 
     // need to validate
     for(i <- 0 until 3; j <- 0 until 100) {
-      log.append(TestUtils.singleMessageSet(j.toString.getBytes), assignOffsets = true)
-      log.append(TestUtils.singleMessageSet(j.toString.getBytes), assignOffsets = true) 
+      log.append(TestUtils.singleMessageSet(payload = j.toString.getBytes, key = j.toString.getBytes), assignOffsets = true)
+      log.append(TestUtils.singleMessageSet(payload = j.toString.getBytes, key = j.toString.getBytes), assignOffsets = true) 
     }
 
     // need to validate
@@ -78,7 +78,7 @@ class CleanerTest extends JUnitSuite {
       val log = new Log(dir = dir,
                         scheduler = time.scheduler,
                         maxSegmentSize = segmentSize,
-                        maxIndexSize = 1024,
+                        maxIndexSize = 100*1024,
                         segmentDeleteDelayMs = deleteDelay,
                         time = time)
       logs.put(TopicAndPartition("log", i), log)      

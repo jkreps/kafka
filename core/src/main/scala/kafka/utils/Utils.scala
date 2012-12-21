@@ -528,4 +528,23 @@ object Utils extends Logging {
    */
   def abs(n: Int) = n & 0x7fffffff
   
+  /**
+   * Replace the given string suffix with the new suffix. If the string doesn't end with the given suffix throw an exception.
+   */
+  def replaceSuffix(s: String, oldSuffix: String, newSuffix: String): String = {
+    if(!s.endsWith(oldSuffix))
+      throw new IllegalArgumentException("Expected string to end with '%s' but string is '%s'".format(oldSuffix, s))
+    s.substring(0, s.length - oldSuffix.length) + newSuffix
+  }
+  
+//  /**
+//   * Rename a file, replacing the old suffix with the new suffix
+//   */
+//  def changeFileSuffix(file: File, oldSuffix: String, newSuffix: String): Boolean = {
+//    val path = file.getPath
+//
+//    val newName = new File(replaceSuffix)
+//    file.renameTo(newName)
+//  }
+  
 }

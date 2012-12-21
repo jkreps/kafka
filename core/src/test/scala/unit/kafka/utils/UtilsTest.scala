@@ -19,6 +19,7 @@ package kafka.utils
 
 import java.util.Arrays
 import java.nio.ByteBuffer
+import java.io._
 import org.apache.log4j.Logger
 import org.scalatest.junit.JUnitSuite
 import org.junit.Test
@@ -60,6 +61,14 @@ class UtilsTest extends JUnitSuite {
       val bytes = testCase.getBytes
       assertTrue(Arrays.equals(bytes, Utils.readBytes(ByteBuffer.wrap(bytes))))
     }
+  }
+  
+  @Test
+  def testReplaceSuffix() {
+    assertEquals("blah.foo.text", Utils.replaceSuffix("blah.foo.txt", ".txt", ".text"))
+    assertEquals("blah.foo", Utils.replaceSuffix("blah.foo.txt", ".txt", ""))
+    assertEquals("txt.txt", Utils.replaceSuffix("txt.txt.txt", ".txt", ""))
+    assertEquals("foo.txt", Utils.replaceSuffix("foo", "", ".txt"))
   }
 
 }

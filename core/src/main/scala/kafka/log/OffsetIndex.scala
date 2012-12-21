@@ -49,7 +49,7 @@ import kafka.utils._
  * All external APIs translate from relative offsets to full offsets, so users of this class do not interact with the internal 
  * storage format.
  */
-class OffsetIndex(val file: File, val baseOffset: Long, val maxIndexSize: Int = -1) extends Logging {
+class OffsetIndex(@volatile var file: File, val baseOffset: Long, val maxIndexSize: Int = -1) extends Logging {
   
   /* initialize the memory mapping for this index */
   private var mmap: MappedByteBuffer = 
@@ -283,6 +283,16 @@ class OffsetIndex(val file: File, val baseOffset: Long, val maxIndexSize: Int = 
   /** Close the index */
   def close() {
     trimToValidSize()
+  }
+  
+  /**
+   * Rename the file that backs this offset index
+   * @return true iff the rename was successful
+   */
+  def renameTo(f: File): Boolean = {
+    val success = this.file.renameTo(f)
+    this.file = f
+    success
   }
   
   /**
