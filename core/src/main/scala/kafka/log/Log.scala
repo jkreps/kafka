@@ -523,46 +523,50 @@ class Log(val dir: File,
    * 
    * @param segment The log segment to schedule for deletion
    */
-  private[log] def deleteSegment(segment: LogSegment) {
+  private def deleteSegment(segment: LogSegment) {
     info("Scheduling log segment %d for log %s for deletion.".format(segment.baseOffset, dir.getName))
     lock synchronized {
       segments.remove(segment.baseOffset)
-      val deletedLog = new File(segment.log.file.getPath + Log.DeletedFileSuffix)
-      val deletedIndex = new File(segment.index.file.getPath + Log.DeletedFileSuffix)
-      val renamedLog = segment.log.file.renameTo(deletedLog)
-      val renamedIndex = segment.index.file.renameTo(deletedIndex)
-      if(!renamedLog && segment.log.file.exists)
-        throw new KafkaStorageException("Failed to rename file %s to %s for log %s.".format(segment.log.file.getPath, deletedLog.getPath, name))
-      if(!renamedIndex && segment.index.file.exists)
-        throw new KafkaStorageException("Failed to rename file %s to %s for log %s.".format(segment.index.file.getPath, deletedIndex.getPath, name))
-      def asyncDeleteFiles() {
-        info("Deleting log segment %s for log %s.".format(segment.baseOffset, name))
-        if(!deletedLog.delete())
-          warn("Failed to delete log segment file %s for log %s.".format(deletedLog.getPath, name))
-        if(!deletedIndex.delete())
-          warn("Failed to delete index segment file %s for log %s.".format(deletedLog.getPath, name))
-      }
-      scheduler.schedule("delete-log-segment", asyncDeleteFiles, delay = segmentDeleteDelayMs)
+      asyncDeleteFile(segment.log.file)
+      asyncDeleteFile(segment.index.file)
     }
   }
   
   /**
-   * Add the given segment to the segments in this log replacing any existing segment with the same base offset
-   * @param segment The segment to add
-   * @return The segment replaced (or none if there was no segment with that base offset)
+   * Perform an asynchronous delete on the given file if it exists (otherwise do nothing)
+   * @throws KafkaStorageException if the file can't be renamed and still exists 
    */
-  def addSegment(segment: LogSegment): LogSegment = 
-    this.segments.put(segment.baseOffset, segment)
+  private def asyncDeleteFile(file: File) {
+    val newName = new File(file.getPath + Log.DeletedFileSuffix)
+    val success = file.renameTo(newName)
+    if(!success && file.exists)
+        throw new KafkaStorageException("Failed to rename file %s to %s for log %s.".format(file.getPath, newName.getPath, name))
+    def deleteFile() {
+      info("Deleting file %s for log %s.".format(file.getPath, name))
+      if(!newName.delete())
+        warn("Failed to delete log segment file %s for log %s.".format(newName.getPath, name))
+    }
+    scheduler.schedule("delete-file", deleteFile, delay = segmentDeleteDelayMs)
+  }
+  
+  private[log] def swapSegments(newSegments: Seq[LogSegment], oldSegments: Seq[LogSegment]) {
+    lock synchronized {
+      val replaced = newSegments.map(addSegment).filter(_ != null)
+      /* for any segments already replaced in the index, just delete their files */
+      for(seg <- replaced) {
+        asyncDeleteFile(seg.log.file)
+        asyncDeleteFile(seg.index.file)
+      }
+      (oldSegments.toSet -- replaced).foreach(deleteSegment)
+    }
+    
+  }
   
   /**
-   * Remove the given segment from the log
-   * @param segment The segment to remove
-   * @return True iff that segment was in the log and was deleted.
+   * Add the given segment to the segments in this log. If this segment replaces an existing segment, delete it.
+   * @param segment The segment to add
    */
-  def removeSegment(segment: LogSegment): Boolean = {
-    val removed = segments.remove(segment.baseOffset)
-    removed != null
-  }
+  def addSegment(segment: LogSegment) = this.segments.put(segment.baseOffset, segment)
   
 }
 

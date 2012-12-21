@@ -112,6 +112,7 @@ class Cleaner(val logs: Pool[TopicAndPartition, Log],
     lock synchronized {
       val lastClean = checkpoints.values.flatMap(_.read()).toMap
       def isDedupe(topic: String) = topicCleanupPolicy.getOrElse(topic, defaultCleanupPolicy).toLowerCase == "dedupe"
+      println(logs.map(l => (l._1.topic, isDedupe(l._1.topic))))
       val eligableLogs = logs.filter(l => isDedupe(l._1.topic))
       val cleanableLogs = eligableLogs.map(l => LogToClean(l._1, l._2, lastClean.getOrElse(l._1, 0)))
       if(cleanableLogs.isEmpty) {
@@ -177,7 +178,7 @@ class Cleaner(val logs: Pool[TopicAndPartition, Log],
     private def clean(cleanable: LogToClean) {
       val topic = cleanable.topicPartition.topic
       val part = cleanable.topicPartition.partition
-      info("Log cleaner %d beginning cleaning of %s-%d.".format(topic, part))
+      info("Log cleaner %d beginning cleaning of %s-%d.".format(id, topic, part))
       val start = time.milliseconds
       val log = cleanable.log
       val segments = log.logSegments

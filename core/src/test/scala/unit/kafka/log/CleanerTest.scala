@@ -30,7 +30,7 @@ import org.scalatest.junit.JUnitSuite
 class CleanerTest extends JUnitSuite {
   
   val time = new MockTime()
-  val segmentSize = 1024
+  val segmentSize = 100
   val deleteDelay = 1000
   val logDir = TestUtils.tempDir()
   val log1 = TopicAndPartition("log", 1)
@@ -47,11 +47,13 @@ class CleanerTest extends JUnitSuite {
     }
     cleaner.startup()
     cleaner.awaitCleaned(1)
+
     // need to validate
     for(i <- 0 until 3; j <- 0 until 100) {
       log.append(TestUtils.singleMessageSet(j.toString.getBytes), assignOffsets = true)
       log.append(TestUtils.singleMessageSet(j.toString.getBytes), assignOffsets = true) 
     }
+
     // need to validate
   }
     
@@ -65,7 +67,7 @@ class CleanerTest extends JUnitSuite {
   def makeCleaner(parts: Int, 
                  minDirtyMessages: Int = 0, 
                  numThreads: Int = 1,
-                 defaultPolicy: String = "delete",
+                 defaultPolicy: String = "dedupe",
                  policyOverrides: Map[String, String] = Map()): Cleaner = {
     
     // create partitions and add them to the pool
