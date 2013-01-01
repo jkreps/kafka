@@ -18,9 +18,12 @@
 package kafka.server
 
 import kafka.network.SocketServer
+import kafka.log.LogConfig
+import kafka.log.CleanerConfig
 import kafka.log.LogManager
 import kafka.utils._
 import java.util.concurrent._
+import java.io.File
 import atomic.AtomicBoolean
 import org.I0Itec.zkclient.ZkClient
 import kafka.controller.{ControllerStats, KafkaController}
@@ -56,9 +59,7 @@ class KafkaServer(val config: KafkaConfig, time: Time = SystemTime) extends Logg
     kafkaScheduler.startup()
 
     /* start log manager */
-    logManager = new LogManager(config,
-                                kafkaScheduler,
-                                time)
+    logManager = createLogManager(config)
     logManager.startup()
 
     socketServer = new SocketServer(config.brokerId,
@@ -137,6 +138,51 @@ class KafkaServer(val config: KafkaConfig, time: Time = SystemTime) extends Logg
   def awaitShutdown(): Unit = shutdownLatch.await()
 
   def getLogManager(): LogManager = logManager
+  
+  private def createLogManager(config: KafkaConfig): LogManager = {
+    val topics = config.logCleanupPolicyMap.keys ++ 
+                 config.logFileSizeMap.keys ++ 
+                 config.flushIntervalMap.keys ++ 
+                 config.logRetentionHoursMap.keys ++ 
+                 config.logRetentionSizeMap.keys ++ 
+                 config.logRollHoursMap.keys
+    val logConfigs = for(topic <- topics) yield 
+      topic -> LogConfig(segmentSize = config.logFileSizeMap.getOrElse(topic, config.logFileSize), 
+                         segmentMs = 60 * 60 * 1000 * config.logRollHoursMap.getOrElse(topic, config.logRollHours),
+                         flushInterval = config.flushInterval,
+                         flushMs = config.flushIntervalMap.getOrElse(topic, config.defaultFlushIntervalMs).toLong,
+                         retentionSize = config.logRetentionSizeMap.getOrElse(topic, config.logRetentionSize),
+                         retentionMs = 60 * 60 * 1000 * config.logRetentionHoursMap.getOrElse(topic, config.logRetentionHours),
+                         maxMessageSize = config.maxMessageSize,
+                         maxIndexSize = config.logIndexMaxSizeBytes,
+                         indexInterval = config.logIndexIntervalBytes,
+                         fileDeleteDelayMs = config.logDeleteDelayMs,
+                         dedupe = config.logCleanupPolicyMap.getOrElse(topic, config.logCleanupPolicy).trim.toLowerCase == "dedupe")
+    val defaultLogConfig = LogConfig(segmentSize = config.logFileSize, 
+                                     segmentMs = 60 * 60 * 1000 * config.logRollHours,
+                                     flushInterval = config.flushInterval,
+                                     flushMs = config.defaultFlushIntervalMs.toLong,
+                                     retentionSize = config.logRetentionSize,
+                                     retentionMs = 60 * 60 * 1000 * config.logRetentionHours,
+                                     maxMessageSize = config.maxMessageSize,
+                                     maxIndexSize = config.logIndexMaxSizeBytes,
+                                     indexInterval = config.logIndexIntervalBytes,
+                                     fileDeleteDelayMs = config.logDeleteDelayMs,
+                                     dedupe = config.logCleanupPolicy.trim.toLowerCase == "dedupe")
+    val cleanerConfig = CleanerConfig(numThreads = config.logCleanerThreads,
+                                      bufferSize = config.logCleanerIoBufferSize,
+                                      maxIoBytesPerSecond = config.logCleanerIoMaxBytesPerSecond,
+                                      minDirtyMessages = 0) // TODO: Fix me
+    new LogManager(logDirs = config.logDirs.map(new File(_)).toArray,
+                   configs = logConfigs.toMap,
+                   defaultConfig = defaultLogConfig,
+                   cleanerConfig = CleanerConfig(),
+                   flushCheckMs = config.flushSchedulerThreadRate,
+                   retentionCheckMs = config.logCleanupIntervalMinutes * 60 * 1000,
+                   scheduler = kafkaScheduler,
+                   time = time)
+  }
+
 }
 
 

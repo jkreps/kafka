@@ -49,15 +49,9 @@ import com.yammer.metrics.core.Gauge
  */
 @threadsafe
 class Log(val dir: File,
+          val config: LogConfig,
+          val needsRecovery: Boolean,
           val scheduler: Scheduler,
-          val maxSegmentSize: Int,
-          val maxMessageSize: Int = Int.MaxValue, 
-          val flushInterval: Int = Int.MaxValue,
-          val rollIntervalMs: Long = Long.MaxValue, 
-          val needsRecovery: Boolean = true, 
-          val maxIndexSize: Int = (10*1024*1024),
-          val indexIntervalBytes: Int = 4096,
-          val segmentDeleteDelayMs: Long = 60000,
           time: Time = SystemTime) extends Logging with KafkaMetricsGroup {
 
   import kafka.log.Log._
@@ -134,12 +128,12 @@ class Log(val dir: File,
         val hasIndex = Log.indexFilename(dir, start).exists
         val segment = new LogSegment(dir = dir, 
                                      startOffset = start,
-                                     indexIntervalBytes = indexIntervalBytes, 
-                                     maxIndexSize = maxIndexSize)
+                                     indexIntervalBytes = config.indexInterval, 
+                                     maxIndexSize = config.maxIndexSize)
         if(!hasIndex) {
           // this can only happen if someone manually deletes the index file
           error("Could not find index file corresponding to log file %s, rebuilding index...".format(segment.log.file.getAbsolutePath))
-          segment.recover(maxMessageSize)
+          segment.recover(config.maxMessageSize)
         }
         logSegments.put(start, segment)
       }
@@ -150,17 +144,17 @@ class Log(val dir: File,
       logSegments.put(0,
                       new LogSegment(dir = dir, 
                                      startOffset = 0,
-                                     indexIntervalBytes = indexIntervalBytes, 
-                                     maxIndexSize = maxIndexSize))
+                                     indexIntervalBytes = config.indexInterval, 
+                                     maxIndexSize = config.maxIndexSize))
     } else {
       // reset the index size of the currently active log segment to allow more entries
       val active = logSegments.lastEntry.getValue
-      active.index.resize(maxIndexSize)
+      active.index.resize(config.maxIndexSize)
 
       // run recovery on the active segment if necessary
       if(needsRecovery) {
         info("Recovering active segment of %s.".format(name))
-        active.recover(maxMessageSize)
+        active.recover(config.maxMessageSize)
       }
     }
     logSegments
@@ -286,8 +280,8 @@ class Log(val dir: File,
       // check the validity of the message by checking CRC and message size
       val m = messageAndOffset.message
       m.ensureValid()
-      if(MessageSet.entrySize(m) > maxMessageSize)
-        throw new MessageSizeTooLargeException("Message size is %d bytes which exceeds the maximum configured message size of %d.".format(MessageSet.entrySize(m), maxMessageSize))
+      if(MessageSet.entrySize(m) > config.maxMessageSize)
+        throw new MessageSizeTooLargeException("Message size is %d bytes which exceeds the maximum configured message size of %d.".format(MessageSet.entrySize(m), config.maxMessageSize))
       
       messageCount += 1;
       
@@ -395,8 +389,8 @@ class Log(val dir: File,
    */
   private def maybeRoll(): LogSegment = {
     val segment = activeSegment
-    if ((segment.size > maxSegmentSize) ||
-       (segment.size > 0 && time.milliseconds - segment.created > rollIntervalMs) ||
+    if ((segment.size > config.segmentSize) ||
+       (segment.size > 0 && time.milliseconds - segment.created > config.segmentMs) ||
        segment.index.isFull)
       roll()
     else
@@ -429,11 +423,11 @@ class Log(val dir: File,
       }
       val segment = new LogSegment(dir, 
                                    startOffset = newOffset,
-                                   indexIntervalBytes = indexIntervalBytes, 
-                                   maxIndexSize = maxIndexSize)
+                                   indexIntervalBytes = config.indexInterval, 
+                                   maxIndexSize = config.maxIndexSize)
       val prev = addSegment(segment)
       if(prev != null)
-        throw new KafkaException("Trying to roll a new log segment for topic partition %s with start offset %d while it already exists.".format(dir.getName, newOffset))
+        throw new KafkaException("Trying to roll a new log segment for topic partition %s with start offset %d while it already exists.".format(name, newOffset))
       segment
     }
   }
@@ -443,12 +437,12 @@ class Log(val dir: File,
    * @param numberOfMessages The number of messages that are being appended
    */
   private def maybeFlush(numberOfMessages : Int) {
-    if(unflushed.addAndGet(numberOfMessages) >= flushInterval)
+    if(unflushed.addAndGet(numberOfMessages) >= config.flushInterval)
       flush()
   }
 
   /**
-   * Flush this log file and assoicated index to the physical disk
+   * Flush this log file and associated index to the physical disk
    */
   def flush() : Unit = {
     if (unflushed.get == 0)
@@ -507,8 +501,8 @@ class Log(val dir: File,
       segmentsToDelete.foreach(deleteSegment(_))
       addSegment(new LogSegment(dir, 
                                 newOffset,
-                                indexIntervalBytes = indexIntervalBytes, 
-                                maxIndexSize = maxIndexSize))
+                                indexIntervalBytes = config.indexInterval, 
+                                maxIndexSize = config.maxIndexSize))
       this.nextOffset.set(newOffset)
     }
   }
@@ -534,7 +528,7 @@ class Log(val dir: File,
    */
   def logSegments(from: Long, to: Long) = asIterable(segments.subMap(from, true, to, true).values)
   
-  override def toString() = "Log(" + this.dir + ")"
+  override def toString() = "Log(" + dir + ")"
   
   /**
    * This method performs an asynchronous log segment delete by doing the following:
@@ -549,7 +543,7 @@ class Log(val dir: File,
    * @param segment The log segment to schedule for deletion
    */
   private def deleteSegment(segment: LogSegment) {
-    info("Scheduling log segment %d for log %s for deletion.".format(segment.baseOffset, dir.getName))
+    info("Scheduling log segment %d for log %s for deletion.".format(segment.baseOffset, name))
     lock synchronized {
       segments.remove(segment.baseOffset)
       segment.changeFileSuffixes("", Log.DeletedFileSuffix)
@@ -570,7 +564,7 @@ class Log(val dir: File,
           warn("Failed to delete log segment file %s for log %s.".format(file.getPath, name))
       }
     }
-    scheduler.schedule("delete-file", deleteFiles, delay = segmentDeleteDelayMs)
+    scheduler.schedule("delete-file", deleteFiles, delay = config.fileDeleteDelayMs)
   }
   
   /**

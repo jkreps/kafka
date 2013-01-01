@@ -27,6 +27,7 @@ import scala.collection._
 import scala.collection.mutable
 import java.util.Properties
 import kafka.common.KafkaException
+import kafka.common.KafkaStorageException
 
 
 /**
@@ -536,15 +537,19 @@ object Utils extends Logging {
       throw new IllegalArgumentException("Expected string to end with '%s' but string is '%s'".format(oldSuffix, s))
     s.substring(0, s.length - oldSuffix.length) + newSuffix
   }
-  
-//  /**
-//   * Rename a file, replacing the old suffix with the new suffix
-//   */
-//  def changeFileSuffix(file: File, oldSuffix: String, newSuffix: String): Boolean = {
-//    val path = file.getPath
-//
-//    val newName = new File(replaceSuffix)
-//    file.renameTo(newName)
-//  }
+
+  /**
+   * Create a file with the given path
+   * @param path The path to create
+   * @throw KafkaStorageException If the file create fails
+   * @return The created file
+   */
+  def createFile(path: String): File = {
+    val f = new File(path)
+    val created = f.createNewFile()
+    if(!created)
+      throw new KafkaStorageException("Failed to create file %s.".format(path))
+    f
+  }
   
 }

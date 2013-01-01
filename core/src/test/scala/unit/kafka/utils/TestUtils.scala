@@ -498,7 +498,7 @@ object TestUtils extends Logging {
 }
 
 object TestZKUtils {
-  val zookeeperConnect = "127.0.0.1:2182"
+  val zookeeperConnect = "127.0.0.1:" + TestUtils.choosePort()
 }
 
 class IntEncoder(props: VerifiableProperties = null) extends Encoder[Int] {

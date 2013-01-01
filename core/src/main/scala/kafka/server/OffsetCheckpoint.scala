@@ -35,7 +35,7 @@ class OffsetCheckpoint(val file: File) extends Logging {
       // write to temp file and then swap with the highwatermark file
       val temp = new File(file.getAbsolutePath + ".tmp")
 
-      val writer = new BufferedWriter(new FileWriter(file))
+      val writer = new BufferedWriter(new FileWriter(temp))
       try {
         // write the current version
         writer.write(0.toString)

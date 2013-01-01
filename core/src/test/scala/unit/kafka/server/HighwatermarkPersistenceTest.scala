@@ -16,7 +16,8 @@
 */
 package kafka.server
 
-import kafka.log.LogManager
+import kafka.log._
+import java.io.File
 import org.I0Itec.zkclient.ZkClient
 import org.scalatest.junit.JUnit3Suite
 import org.easymock.EasyMock
@@ -30,7 +31,14 @@ class HighwatermarkPersistenceTest extends JUnit3Suite {
 
   val configs = TestUtils.createBrokerConfigs(2).map(new KafkaConfig(_))
   val topic = "foo"
-  val logManagers = configs.map(config => new LogManager(config, new KafkaScheduler(1), new MockTime))
+  val logManagers = configs.map(config => new LogManager(logDirs = config.logDirs.map(new File(_)).toArray,
+                                                         configs = Map(),
+                                                         defaultConfig = LogConfig(),
+                                                         cleanerConfig = CleanerConfig(),
+                                                         flushCheckMs = 30000,
+                                                         retentionCheckMs = 30000,
+                                                         scheduler = new KafkaScheduler(1),
+                                                         time = new MockTime))
     
   @After
   def teardown() {

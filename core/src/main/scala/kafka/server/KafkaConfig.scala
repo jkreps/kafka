@@ -113,9 +113,6 @@ class KafkaConfig private (val props: VerifiableProperties) extends ZKConfig(pro
   /* a per-topic override for the cleanup policy for segments beyond the retention window */
   val logCleanupPolicyMap = props.getMap("topic.log.cleanup.policy")
   
-  /* wait until the head of the log exceeds log.cleaner.backoff.factor before deduplicating the log */
-  val logCleanerBackoffFactor = props.getDouble("log.cleaner.backoff.factor")
-  
   /* the number of background threads to use for log cleaning */
   val logCleanerThreads = props.getIntInRange("log.cleaner.threads", 1, (0, Int.MaxValue))
   

@@ -34,7 +34,7 @@ import kafka.controller.KafkaController
 
 object ReplicaManager {
   val UnknownLogEndOffset = -1L
-  val HighWatermarkFilename = ".highwatermark"
+  val HighWatermarkFilename = "replication-offset-checkpoint"
 }
 
 class ReplicaManager(val config: KafkaConfig, 
@@ -50,7 +50,7 @@ class ReplicaManager(val config: KafkaConfig,
   val replicaFetcherManager = new ReplicaFetcherManager(config, this)
   this.logIdent = "Replica Manager on Broker " + config.brokerId + ": "
   private val highWatermarkCheckPointThreadStarted = new AtomicBoolean(false)
-  val highWatermarkCheckpoints = config.logDirs.map(dir => (dir, new OffsetCheckpoint(new File(dir, "replication-offset-checkpoint")))).toMap
+  val highWatermarkCheckpoints = config.logDirs.map(dir => (dir, new OffsetCheckpoint(new File(dir, ReplicaManager.HighWatermarkFilename)))).toMap
 
   newGauge(
     "LeaderCount",

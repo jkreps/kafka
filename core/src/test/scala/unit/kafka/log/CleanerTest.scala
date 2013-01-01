@@ -18,6 +18,7 @@
 package kafka.log
 
 import java.io.File
+import scala.collection._
 import org.junit._
 import kafka.common.TopicAndPartition
 import kafka.utils._
@@ -32,29 +33,37 @@ class CleanerTest extends JUnitSuite {
   val time = new MockTime()
   val segmentSize = 10000
   val deleteDelay = 1000
+  val logName = "log"
   val logDir = TestUtils.tempDir()
-  val log1 = TopicAndPartition("log", 1)
-  val log2 = TopicAndPartition("log", 2)
+  var counter = 0
+  val topics = Array(TopicAndPartition("log", 0), TopicAndPartition("log", 1), TopicAndPartition("log", 2))
   
-  @Test
-  def testSimpleCleaning() {
-    val cleaner = makeCleaner(parts = 2)
-    val log = cleaner.logs.get(log1)
-    // add messages
-    for(i <- 0 until 3; j <- 0 until 100) {
-      log.append(TestUtils.singleMessageSet(payload = j.toString.getBytes, key = j.toString.getBytes), assignOffsets = true)
-      log.append(TestUtils.singleMessageSet(payload = j.toString.getBytes, key = j.toString.getBytes), assignOffsets = true) 
-    }
+  def cleanerTest(minDirtyMessages: Int) {
+    val cleaner = makeCleaner(parts = 3)
+    val log = cleaner.logs.get(topics(0))
+
+    val appends = writeDups(numKeys = 100, numDups = 3, log)
     cleaner.startup()
-    cleaner.awaitCleaned(1)
+    
+    val lastCleanable = log.logSegments.last.baseOffset - minDirtyMessages
+    // wait until we clean up to base_offset of active segment - minDirtyMessages
+    cleaner.awaitCleaned("log", 1, 1L)
+
+    // two checks -- (1) total set of key/value pairs should match hash map
+    //               (2) the tail of the log should contain no (few) duplicates
+    // 
 
     // need to validate
-    for(i <- 0 until 3; j <- 0 until 100) {
-      log.append(TestUtils.singleMessageSet(payload = j.toString.getBytes, key = j.toString.getBytes), assignOffsets = true)
-      log.append(TestUtils.singleMessageSet(payload = j.toString.getBytes, key = j.toString.getBytes), assignOffsets = true) 
+    cleaner.shutdown()
+  }
+  
+  def writeDups(numKeys: Int, numDups: Int, log: Log): Seq[(Int, Int)] = {
+    for(dup <- 0 until numDups; key <- 0 until numKeys) yield {
+      val count = counter
+      counter += 1
+      val appendInfo = log.append(TestUtils.singleMessageSet(payload = counter.toString.getBytes, key = key.toString.getBytes), assignOffsets = true)
+      (key, count)
     }
-
-    // need to validate
   }
     
   @After
@@ -62,13 +71,14 @@ class CleanerTest extends JUnitSuite {
     Utils.rm(logDir)
   }
   
-  
-  /* create a cleaner instance and logs with the given parameters */
+  /* create a cleaner instance and logs with the given parameters 
+   * TODO: should take CleanerConfig instance
+   */
   def makeCleaner(parts: Int, 
-                 minDirtyMessages: Int = 0, 
-                 numThreads: Int = 1,
-                 defaultPolicy: String = "dedupe",
-                 policyOverrides: Map[String, String] = Map()): Cleaner = {
+                  minDirtyMessages: Int = 0, 
+                  numThreads: Int = 1,
+                  defaultPolicy: String = "dedupe",
+                  policyOverrides: Map[String, String] = Map()): Cleaner = {
     
     // create partitions and add them to the pool
     val logs = new Pool[TopicAndPartition, Log]()
@@ -76,20 +86,16 @@ class CleanerTest extends JUnitSuite {
       val dir = new File(logDir, "log-1")
       dir.mkdirs()
       val log = new Log(dir = dir,
+                        LogConfig(segmentSize = segmentSize, maxIndexSize = 100*1024, fileDeleteDelayMs = deleteDelay),
+                        needsRecovery = false,
                         scheduler = time.scheduler,
-                        maxSegmentSize = segmentSize,
-                        maxIndexSize = 100*1024,
-                        segmentDeleteDelayMs = deleteDelay,
                         time = time)
       logs.put(TopicAndPartition("log", i), log)      
     }
   
-    new Cleaner(logs = logs,
-                logDirs = Seq(logDir),
-                defaultCleanupPolicy = defaultPolicy,
-                topicCleanupPolicy = policyOverrides,
-                numThreads = numThreads,
-                minDirtyMessages = minDirtyMessages,
+    new Cleaner(CleanerConfig(numThreads = numThreads, minDirtyMessages = minDirtyMessages),
+                logDirs = Array(logDir),
+                logs = logs,
                 time = time)
   }
 
