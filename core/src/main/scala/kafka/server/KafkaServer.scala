@@ -157,6 +157,7 @@ class KafkaServer(val config: KafkaConfig, time: Time = SystemTime) extends Logg
                          maxIndexSize = config.logIndexMaxSizeBytes,
                          indexInterval = config.logIndexIntervalBytes,
                          fileDeleteDelayMs = config.logDeleteDelayMs,
+                         minCleanableRatio = config.logCleanerMinCleanRatio,
                          dedupe = config.logCleanupPolicyMap.getOrElse(topic, config.logCleanupPolicy).trim.toLowerCase == "dedupe")
     val defaultLogConfig = LogConfig(segmentSize = config.logFileSize, 
                                      segmentMs = 60 * 60 * 1000 * config.logRollHours,
@@ -168,11 +169,11 @@ class KafkaServer(val config: KafkaConfig, time: Time = SystemTime) extends Logg
                                      maxIndexSize = config.logIndexMaxSizeBytes,
                                      indexInterval = config.logIndexIntervalBytes,
                                      fileDeleteDelayMs = config.logDeleteDelayMs,
+                                     minCleanableRatio = config.logCleanerMinCleanRatio,
                                      dedupe = config.logCleanupPolicy.trim.toLowerCase == "dedupe")
     val cleanerConfig = CleanerConfig(numThreads = config.logCleanerThreads,
-                                      bufferSize = config.logCleanerIoBufferSize,
-                                      maxIoBytesPerSecond = config.logCleanerIoMaxBytesPerSecond,
-                                      minDirtyMessages = 0) // TODO: Fix me
+                                      bufferSize = config.logCleanerBufferSize,
+                                      maxIoBytesPerSecond = config.logCleanerIoMaxBytesPerSecond) // TODO: Fix me
     new LogManager(logDirs = config.logDirs.map(new File(_)).toArray,
                    configs = logConfigs.toMap,
                    defaultConfig = defaultLogConfig,

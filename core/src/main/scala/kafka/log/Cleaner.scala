@@ -62,7 +62,7 @@ class Cleaner(val config: CleanerConfig,
   private val threadId = new AtomicInteger(0)
   
   /* the threads */
-  private val cleaners = (0 until config.numThreads).map(_ => new CleanerThread())
+  private val cleaners = (0 until config.numThreads).map(_ => new CleanerThread(config.bufferSize / config.numThreads))
   
   /* a throttle used to limit the I/O of all the cleaner threads to a user-specified maximum rate */
   private val throttler = new Throttler(desiredRatePerSec = config.maxIoBytesPerSecond, 
@@ -119,15 +119,15 @@ class Cleaner(val config: CleanerConfig,
       // create a LogToClean instance for each log that is eligible for cleaning
       val eligibleLogs = logs.filter(l => l._2.config.dedupe)
                              .map(l => LogToClean(l._1, l._2, lastClean.getOrElse(l._1, 0)))  
-                             .filter(_.dirtyMessages > 0) // TODO: filter by minimum dirty
-                             .filter(_.log.numberOfSegments > 1)
+                             .filter(l => l.totalBytes > 0)
+                             .filter(l => l.cleanableRatio > l.log.config.minCleanableRatio)
                               
       if(eligibleLogs.isEmpty) {
         None
       } else {
-        val toClean = eligibleLogs.min
-        inProgress += toClean.topicPartition
-        Some(toClean)
+        val filthiest = eligibleLogs.max
+        inProgress += filthiest.topicPartition
+        Some(filthiest)
       }
     }
   }
@@ -153,10 +153,10 @@ class Cleaner(val config: CleanerConfig,
     }
   }
 
-  private class CleanerThread extends Thread {
+  private class CleanerThread(memorySize: Int) extends Thread {
     val id = threadId.getAndIncrement()
-    val buffer = ByteBuffer.allocate(config.bufferSize)
-    val offsetMap = new SkimpyOffsetMap
+    val buffer = ByteBuffer.allocate(1024*1024) // buffer for disk I/O
+    val offsetMap = new SkimpyOffsetMap(memorySize - buffer.limit, config.dedupeBufferLoadFactor)
     
     setName("kafka-log-cleaner-thread-" + id)
     setDaemon(false)
@@ -198,7 +198,7 @@ class Cleaner(val config: CleanerConfig,
       val truncateCount = log.numberOfTruncates
       val segments = log.logSegments.toArray /* filter down to needed segments */
       val dataDir = log.dir.getParentFile
-      val endOffset = segments.last.baseOffset - 1
+      val endOffset = math.min(segments.last.baseOffset - 1, offsetMap.capacity)
       buildOffsetMap(log, cleanable.lastCleanOffset, endOffset, offsetMap)
       for (group <- groupSegmentsBySize(segments.dropRight(1), log.config.segmentSize, log.config.maxIndexSize))
         cleanSegments(log, group, offsetMap, truncateCount)
@@ -206,10 +206,6 @@ class Cleaner(val config: CleanerConfig,
       doneCleaning(cleanable.topicPartition)
       val ellapsed = time.milliseconds - start
       info("Log cleaner %d completed cleaning of %s-%d in %d ms.".format(id, topic, part, ellapsed))
-    }
-    
-    private def lastCleanableOffset(log: Log): Long = {
-      0L  
     }
     
     /* Group log segments into groups of size < max segment size */
@@ -299,8 +295,9 @@ class Cleaner(val config: CleanerConfig,
           if(key == null)
             throw new IllegalStateException("Found null key in log segment %s which is marked as dedupe.".format(source.log.file.getAbsolutePath))
           val lastOffset = map.get(key)
-          // recopy the record only if it doesn't appear at a later offset
-          if(lastOffset < 0 || entry.offset >= lastOffset) {
+          /* retain the record if it isn't present in the map OR it is present but this offset is the highest (and its not a delete) */
+          val retainRecord = lastOffset < 0 || (entry.offset >= lastOffset && entry.message.payload != null)
+          if(retainRecord) {
             dest.append(entry.offset, new ByteBufferMessageSet(compressionCodec = NoCompressionCodec, offsetCounter = new AtomicLong(entry.offset), messages = Array(entry.message): _*))
             throttler.maybeThrottle(size)
           }
@@ -322,6 +319,9 @@ class Cleaner(val config: CleanerConfig,
  * Helper class for a log, its topic/partition, and the last clean position
  */
 private case class LogToClean(topicPartition: TopicAndPartition, log: Log, lastCleanOffset: Long) extends Ordered[LogToClean] {
-  val dirtyMessages = log.logSegments.last.baseOffset - lastCleanOffset
-  override def compare(that: LogToClean): Int = math.signum(this.dirtyMessages - that.dirtyMessages).toInt
+  val cleanBytes = log.logSegments(0, lastCleanOffset).map(_.size).sum
+  val cleanableBytes = log.logSegments(lastCleanOffset + 1, log.activeSegment.baseOffset - 1).map(_.size).sum
+  val cleanableRatio = cleanableBytes / totalBytes.toDouble
+  def totalBytes = cleanBytes + cleanableBytes
+  override def compare(that: LogToClean): Int = math.signum(this.cleanableRatio - that.cleanableRatio).toInt
 }

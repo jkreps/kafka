@@ -45,10 +45,11 @@ class CleanerTest extends JUnitSuite {
     val appends = writeDups(numKeys = 100, numDups = 3, log)
     cleaner.startup()
     
-    val lastCleanable = log.logSegments.last.baseOffset - minDirtyMessages
+    val lastCleaned = log.activeSegment.baseOffset - 1
     // wait until we clean up to base_offset of active segment - minDirtyMessages
-    cleaner.awaitCleaned("log", 1, 1L)
+    cleaner.awaitCleaned("log", 1, lastCleaned)
 
+    
     // two checks -- (1) total set of key/value pairs should match hash map
     //               (2) the tail of the log should contain no (few) duplicates
     // 
@@ -93,7 +94,7 @@ class CleanerTest extends JUnitSuite {
       logs.put(TopicAndPartition("log", i), log)      
     }
   
-    new Cleaner(CleanerConfig(numThreads = numThreads, minDirtyMessages = minDirtyMessages),
+    new Cleaner(CleanerConfig(numThreads = numThreads),
                 logDirs = Array(logDir),
                 logs = logs,
                 time = time)

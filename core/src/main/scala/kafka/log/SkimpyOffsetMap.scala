@@ -23,8 +23,20 @@ import java.security.MessageDigest
 import java.nio.ByteBuffer
 import kafka.utils.Utils
 
-class SkimpyOffsetMap() {
+/**
+ * An approximate map used for deduplicating the log
+ * @param memory The amount of memory this map can use
+ * @param maxLoadFactor The maximum percent full this offset map can be
+ */
+class SkimpyOffsetMap(val memory: Int, val maxLoadFactor: Double) {
   val map = new ConcurrentHashMap[ByteBuffer, Long]
+  
+  val bytesPerEntry = 24
+  
+  /**
+   * The maximum number of entries this map can contain
+   */
+  val capacity: Int = (maxLoadFactor * memory / bytesPerEntry).toInt
   
   def put(key: ByteBuffer, offset: Long): Unit = map.put(key, offset)
   

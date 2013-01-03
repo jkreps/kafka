@@ -119,8 +119,12 @@ class KafkaConfig private (val props: VerifiableProperties) extends ZKConfig(pro
   /* the log cleaner will be throttled so that the sum of its read and write i/o will be less than this value on average */
   val logCleanerIoMaxBytesPerSecond = props.getDouble("log.cleaner.io.max.bytes.per.second", Double.MaxValue)
   
-  /* the size of the buffer used by the cleaner for reading and writing to the log */
-  val logCleanerIoBufferSize = props.getIntInRange("log.cleaner.io.buffer.size", 1024*1024, (0, Int.MaxValue))
+  /* the size of the buffer used for log cleaning */
+  val logCleanerBufferSize = props.getIntInRange("log.cleaner.buffer.size", 100*1024*1024, (0, Int.MaxValue))
+  
+  /* the minimum ratio of bytes of log eligible for cleaning to bytes to total bytes which a log must
+     contain to be eligible for cleaning */
+  val logCleanerMinCleanRatio = props.getDouble("log.cleaner.min.cleanable.ratio", 0.5)
   
   /* the maximum size in bytes of the offset index */
   val logIndexMaxSizeBytes = props.getIntInRange("log.index.max.size", 10*1024*1024, (4, Int.MaxValue))

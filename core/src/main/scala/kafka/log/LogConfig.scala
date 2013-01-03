@@ -15,6 +15,7 @@ import kafka.common._
  * @param maxIndexSize The maximum size of an index file
  * @param indexInterval The approximate number of bytes between index entries
  * @param fileDeleteDelayMs The time to wait before deleting a file from the filesystem
+ * @param minCleanableRatio The ratio of bytes that are available for cleaning to the bytes already cleaned
  * @param dedupe Should old segments in this log be deleted or deduplicated?
  */
 case class LogConfig(val segmentSize: Int = 1024*1024, 
@@ -27,6 +28,7 @@ case class LogConfig(val segmentSize: Int = 1024*1024,
                      val maxIndexSize: Int = 1024*1024,
                      val indexInterval: Int = 4096,
                      val fileDeleteDelayMs: Long = 60*1000,
+                     val minCleanableRatio: Double = 0.5,
                      val dedupe: Boolean = false)
                       
                      
