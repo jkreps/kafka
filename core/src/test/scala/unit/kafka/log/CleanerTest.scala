@@ -24,6 +24,7 @@ import kafka.common.TopicAndPartition
 import kafka.utils._
 import kafka.message._
 import org.scalatest.junit.JUnitSuite
+import junit.framework.Assert._
 
 /**
  * Tests for the log cleaner
@@ -31,38 +32,47 @@ import org.scalatest.junit.JUnitSuite
 class CleanerTest extends JUnitSuite {
   
   val time = new MockTime()
-  val segmentSize = 10000
+  val segmentSize = 100
   val deleteDelay = 1000
   val logName = "log"
   val logDir = TestUtils.tempDir()
   var counter = 0
   val topics = Array(TopicAndPartition("log", 0), TopicAndPartition("log", 1), TopicAndPartition("log", 2))
   
-  def cleanerTest(minDirtyMessages: Int) {
+  @Test
+  def cleanerTest() {
     val cleaner = makeCleaner(parts = 3)
     val log = cleaner.logs.get(topics(0))
 
     val appends = writeDups(numKeys = 100, numDups = 3, log)
+    val startSize = log.size
     cleaner.startup()
     
-    val lastCleaned = log.activeSegment.baseOffset - 1
+    val lastCleaned = log.activeSegment.baseOffset
     // wait until we clean up to base_offset of active segment - minDirtyMessages
-    cleaner.awaitCleaned("log", 1, lastCleaned)
-
+    cleaner.awaitCleaned("log", 0, lastCleaned)
     
-    // two checks -- (1) total set of key/value pairs should match hash map
-    //               (2) the tail of the log should contain no (few) duplicates
-    // 
-
+    val read = readFromLog(log)
+    assertEquals("Contents of the map shouldn't change.", appends.toMap, read.toMap)
+    assertTrue(startSize > log.size)
+    
     // need to validate
     cleaner.shutdown()
+  }
+  
+  def readFromLog(log: Log): Iterable[(Int, Int)] = {
+    for(segment <- log.logSegments; message <- segment.log) yield {
+      val key = Utils.readString(message.message.key).toInt
+      val value = Utils.readString(message.message.payload).toInt
+      key -> value
+    }
   }
   
   def writeDups(numKeys: Int, numDups: Int, log: Log): Seq[(Int, Int)] = {
     for(dup <- 0 until numDups; key <- 0 until numKeys) yield {
       val count = counter
-      counter += 1
       val appendInfo = log.append(TestUtils.singleMessageSet(payload = counter.toString.getBytes, key = key.toString.getBytes), assignOffsets = true)
+      counter += 1
       (key, count)
     }
   }
@@ -84,10 +94,10 @@ class CleanerTest extends JUnitSuite {
     // create partitions and add them to the pool
     val logs = new Pool[TopicAndPartition, Log]()
     for(i <- 0 until parts) {
-      val dir = new File(logDir, "log-1")
+      val dir = new File(logDir, "log-" + i)
       dir.mkdirs()
       val log = new Log(dir = dir,
-                        LogConfig(segmentSize = segmentSize, maxIndexSize = 100*1024, fileDeleteDelayMs = deleteDelay),
+                        LogConfig(segmentSize = segmentSize, maxIndexSize = 100*1024, fileDeleteDelayMs = deleteDelay, dedupe = true),
                         needsRecovery = false,
                         scheduler = time.scheduler,
                         time = time)
