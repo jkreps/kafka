@@ -26,7 +26,7 @@ import scala.collection.JavaConversions._
 import kafka.common.Topic
 import kafka.cluster.Broker
 
-object TopicCommand extends Logging {
+object TopicCommand {
 
   def main(args: Array[String]): Unit = {
     
