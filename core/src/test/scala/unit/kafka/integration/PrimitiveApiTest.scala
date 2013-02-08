@@ -31,7 +31,7 @@ import org.I0Itec.zkclient.ZkClient
 import kafka.zk.ZooKeeperTestHarness
 import org.scalatest.junit.JUnit3Suite
 import scala.collection._
-import kafka.admin.{AdminUtils, CreateTopicCommand}
+import kafka.admin.AdminUtils
 import kafka.common.{TopicAndPartition, ErrorMapping, UnknownTopicOrPartitionException, OffsetOutOfRangeException}
 
 /**
@@ -48,7 +48,7 @@ class PrimitiveApiTest extends JUnit3Suite with ProducerConsumerTestHarness with
   override def setUp() {
     super.setUp
     // temporarily set request handler logger to a higher level
-    requestHandlerLogger.setLevel(Level.FATAL)
+    //requestHandlerLogger.setLevel(Level.FATAL)
   }
 
   override def tearDown() {
@@ -307,7 +307,7 @@ class PrimitiveApiTest extends JUnit3Suite with ProducerConsumerTestHarness with
 
   def testConsumerEmptyTopic() {
     val newTopic = "new-topic"
-    CreateTopicCommand.createTopic(zkClient, newTopic, 1, 1, config.brokerId.toString)
+    AdminUtils.createTopic(zkClient, newTopic, 1, 1)
     assertTrue("Topic new-topic not created after timeout", TestUtils.waitUntilTrue(() =>
       AdminUtils.fetchTopicMetadataFromZk(newTopic, zkClient).errorCode != ErrorMapping.UnknownTopicOrPartitionCode, zookeeper.tickTime))
     TestUtils.waitUntilLeaderIsElectedOrChanged(zkClient, newTopic, 0, 500)
@@ -321,7 +321,7 @@ class PrimitiveApiTest extends JUnit3Suite with ProducerConsumerTestHarness with
    */
   def createSimpleTopicsAndAwaitLeader(zkClient: ZkClient, topics: Seq[String], brokerId: Int) {
     for( topic <- topics ) {
-      CreateTopicCommand.createTopic(zkClient, topic, 1, 1, brokerId.toString)
+      AdminUtils.createTopic(zkClient, topic, 1, 1)
       TestUtils.waitUntilLeaderIsElectedOrChanged(zkClient, topic, 0, 500)
     }
   }

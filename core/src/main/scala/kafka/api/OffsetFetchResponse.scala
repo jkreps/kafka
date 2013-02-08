@@ -24,14 +24,10 @@ import kafka.common.{TopicAndPartition, OffsetMetadataAndError}
 import kafka.utils.Logging
 
 object OffsetFetchResponse extends Logging {
-  val CurrentVersion: Short = 0
-  val DefaultClientId = ""
 
   def readFrom(buffer: ByteBuffer): OffsetFetchResponse = {
     // Read values from the envelope
-    val versionId = buffer.getShort
     val correlationId = buffer.getInt
-    val clientId = readShortString(buffer)
 
     // Read the OffsetResponse 
     val topicCount = buffer.getInt
@@ -46,23 +42,18 @@ object OffsetFetchResponse extends Logging {
         (TopicAndPartition(topic, partitionId), OffsetMetadataAndError(offset, metadata, error))
       })
     })
-    OffsetFetchResponse(Map(pairs:_*), versionId, correlationId, clientId)
+    OffsetFetchResponse(Map(pairs:_*), correlationId)
   }
 }
 
 case class OffsetFetchResponse(requestInfo: Map[TopicAndPartition, OffsetMetadataAndError],
-                               versionId: Short = OffsetFetchResponse.CurrentVersion,
-                               correlationId: Int = 0,
-                               clientId: String = OffsetFetchResponse.DefaultClientId)
+                               correlationId: Int = 0)
     extends RequestOrResponse {
 
   lazy val requestInfoGroupedByTopic = requestInfo.groupBy(_._1.topic)
 
   def writeTo(buffer: ByteBuffer) {
-    // Write envelope
-    buffer.putShort(versionId)
     buffer.putInt(correlationId)
-    writeShortString(buffer, clientId)
 
     // Write OffsetFetchResponse
     buffer.putInt(requestInfoGroupedByTopic.size) // number of topics
@@ -79,9 +70,7 @@ case class OffsetFetchResponse(requestInfo: Map[TopicAndPartition, OffsetMetadat
   }
 
   override def sizeInBytes = 
-    2 + /* versionId */
     4 + /* correlationId */
-    shortStringLength(clientId) +
     4 + /* topic count */
     requestInfoGroupedByTopic.foldLeft(0)((count, topicAndOffsets) => {
       val (topic, offsets) = topicAndOffsets

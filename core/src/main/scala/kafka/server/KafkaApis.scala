@@ -17,7 +17,7 @@
 
 package kafka.server
 
-import kafka.admin.{CreateTopicCommand, AdminUtils}
+import kafka.admin.AdminUtils
 import kafka.api._
 import kafka.message._
 import kafka.network._
@@ -26,6 +26,7 @@ import kafka.utils.ZKGroupTopicDirs
 import org.apache.log4j.Logger
 import scala.collection._
 import kafka.network.RequestChannel.Response
+import java.util.Properties
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic._
 import kafka.metrics.KafkaMetricsGroup
@@ -362,7 +363,7 @@ class KafkaApis(val requestChannel: RequestChannel,
   }
   
   def fetchOffsets(logManager: LogManager, topicAndPartition: TopicAndPartition, timestamp: Long, maxNumOffsets: Int): Seq[Long] = {
-    logManager.getLog(topicAndPartition.topic, topicAndPartition.partition) match {
+    logManager.getLog(topicAndPartition) match {
       case Some(log) => 
         fetchOffsetsBefore(log, timestamp, maxNumOffsets)
       case None => 
@@ -437,7 +438,7 @@ class KafkaApis(val requestChannel: RequestChannel,
               /* check if auto creation of topics is turned on */
               if (config.autoCreateTopicsEnable) {
                 try {
-                  CreateTopicCommand.createTopic(zkClient, topicAndMetadata.topic, config.numPartitions, config.defaultReplicationFactor)
+                  AdminUtils.createTopic(zkClient, topicAndMetadata.topic, config.numPartitions, config.defaultReplicationFactor)
                   info("Auto creation of topic %s with %d partitions and replication factor %d is successful!"
                                .format(topicAndMetadata.topic, config.numPartitions, config.defaultReplicationFactor))
                 } catch {
@@ -472,26 +473,24 @@ class KafkaApis(val requestChannel: RequestChannel,
     val offsetCommitRequest = request.requestObj.asInstanceOf[OffsetCommitRequest]
     if(requestLogger.isTraceEnabled)
       requestLogger.trace("Handling offset commit request " + offsetCommitRequest.toString)
-    trace("Handling offset commit request " + offsetCommitRequest.toString)
     val responseInfo = offsetCommitRequest.requestInfo.map( t => {
-      val topicDirs = new ZKGroupTopicDirs(offsetCommitRequest.groupId, t._1.topic)
+      val (topicAndPartition, metadataAndError) = t
+      val topicDirs = new ZKGroupTopicDirs(offsetCommitRequest.groupId, topicAndPartition.topic)
       try {
-        if(t._2.metadata.length > config.offsetMetadataMaxSize) {
-          (t._1, ErrorMapping.OffsetMetadataTooLargeCode)
+        if(metadataAndError.metadata.length > config.offsetMetadataMaxSize) {
+          (topicAndPartition, ErrorMapping.OffsetMetadataTooLargeCode)
         } else {
           ZkUtils.updatePersistentPath(zkClient, topicDirs.consumerOffsetDir + "/" +
-            t._1.partition, t._2.offset.toString)
-          (t._1, ErrorMapping.NoError)
+            topicAndPartition.partition, metadataAndError.offset.toString)
+          (topicAndPartition, ErrorMapping.NoError)
         }
       } catch {
         case e => 
-          (t._1, ErrorMapping.codeFor(e.getClass.asInstanceOf[Class[Throwable]]))
+          (topicAndPartition, ErrorMapping.codeFor(e.getClass.asInstanceOf[Class[Throwable]]))
       }
     })
-    val response = new OffsetCommitResponse(responseInfo, 
-                                        offsetCommitRequest.versionId, 
-                                        offsetCommitRequest.correlationId,
-                                        offsetCommitRequest.clientId)
+    val response = new OffsetCommitResponse(responseInfo,
+                                            offsetCommitRequest.correlationId)
     requestChannel.sendResponse(new RequestChannel.Response(request, new BoundedByteBufferSend(response)))
   }
 
@@ -502,7 +501,6 @@ class KafkaApis(val requestChannel: RequestChannel,
     val offsetFetchRequest = request.requestObj.asInstanceOf[OffsetFetchRequest]
     if(requestLogger.isTraceEnabled)
       requestLogger.trace("Handling offset fetch request " + offsetFetchRequest.toString)
-    trace("Handling offset fetch request " + offsetFetchRequest.toString)
     val responseInfo = offsetFetchRequest.requestInfo.map( t => {
       val topicDirs = new ZKGroupTopicDirs(offsetFetchRequest.groupId, t.topic)
       try {
@@ -521,9 +519,7 @@ class KafkaApis(val requestChannel: RequestChannel,
       }
     })
     val response = new OffsetFetchResponse(collection.immutable.Map(responseInfo: _*), 
-                                        offsetFetchRequest.versionId, 
-                                        offsetFetchRequest.correlationId,
-                                        offsetFetchRequest.clientId)
+                                           offsetFetchRequest.correlationId)
     requestChannel.sendResponse(new RequestChannel.Response(request, new BoundedByteBufferSend(response)))
   }
 

@@ -27,6 +27,8 @@ import kafka.api.LeaderAndIsr
 import mutable.HashMap
 import org.apache.zookeeper.data.Stat
 import java.util.concurrent.locks.{ReentrantLock, Condition}
+import java.util.Properties
+import java.io.{StringReader, StringWriter}
 import kafka.admin._
 import kafka.common.{TopicAndPartition, KafkaException, NoEpochForPartitionException}
 import kafka.controller.{LeaderIsrAndControllerEpoch, PartitionAndReplica, ReassignedPartitionsContext}
@@ -35,6 +37,8 @@ object ZkUtils extends Logging {
   val ConsumersPath = "/consumers"
   val BrokerIdsPath = "/brokers/ids"
   val BrokerTopicsPath = "/brokers/topics"
+  val TopicConfigPath = "/config/topics"
+  val TopicConfigChangesPath = "/config/changes"
   val ControllerPath = "/controller"
   val ControllerEpochPath = "/controllerEpoch"
   val ReassignPartitionsPath = "/admin/reassign_partitions"
@@ -48,6 +52,9 @@ object ZkUtils extends Logging {
     getTopicPath(topic) + "/partitions"
   }
 
+  def getTopicConfigPath(topic: String): String = 
+    TopicConfigPath + "/" + topic
+  
   def getController(zkClient: ZkClient): Int= {
     readDataMaybeNull(zkClient, ControllerPath)._1 match {
       case Some(controller) => controller.toInt
@@ -63,8 +70,8 @@ object ZkUtils extends Logging {
     getTopicPartitionPath(topic, partitionId) + "/" + "leaderAndISR"
   }
 
-  def getSortedBrokerList(zkClient: ZkClient): Seq[String] ={
-    ZkUtils.getChildren(zkClient, ZkUtils.BrokerIdsPath).sorted
+  def getSortedBrokerList(zkClient: ZkClient): Seq[Int] = {
+    ZkUtils.getChildren(zkClient, ZkUtils.BrokerIdsPath).map(_.toInt).sorted
   }
 
   def getAllLiveBrokerIds(zkClient: ZkClient): Set[Int] = {
@@ -89,6 +96,11 @@ object ZkUtils extends Logging {
 
   def getLeaderAndIsrForPartition(zkClient: ZkClient, topic: String, partition: Int):Option[LeaderAndIsr] = {
     getLeaderIsrAndEpochForPartition(zkClient, topic, partition).map(_.leaderAndIsr)
+  }
+  
+  def setupCommonPaths(zkClient: ZkClient) {
+    for(path <- Seq(ConsumersPath, BrokerIdsPath, BrokerTopicsPath, TopicConfigChangesPath, TopicConfigPath))
+      makeSurePersistentPathExists(zkClient, path)
   }
 
   def parseLeaderAndIsr(leaderAndIsrStr: String, topic: String, partition: Int, stat: Stat)
@@ -180,7 +192,7 @@ object ZkUtils extends Logging {
     debug("The list of replicas for topic %s, partition %d is %s".format(topic, partition, replicas))
     replicas.contains(brokerId.toString)
   }
-
+    
   def registerBrokerInZk(zkClient: ZkClient, id: Int, host: String, port: Int, jmxPort: Int) {
     val brokerIdPath = ZkUtils.BrokerIdsPath + "/" + id
     val broker = new Broker(id, host, port)
@@ -306,10 +318,8 @@ object ZkUtils extends Logging {
           case e: ZkNodeExistsException =>
             stat = client.writeData(path, data)
             return  stat.getVersion
-          case e2 => throw e2
         }
       }
-      case e2 => throw e2
     }
   }
 
@@ -611,7 +621,7 @@ object ZkUtils extends Logging {
           case nne: ZkNoNodeException =>
             ZkUtils.createPersistentPath(zkClient, zkPath, jsonData)
             debug("Created path %s with %s for partition reassignment".format(zkPath, jsonData))
-          case e2 => throw new AdministrationException(e2.toString)
+          case e2 => throw new AdminOperationException(e2.toString)
         }
     }
   }

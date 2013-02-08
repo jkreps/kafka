@@ -268,7 +268,7 @@ private[kafka] class Processor(val id: Int,
           debug("Ignoring response for closed socket.")
           close(key)
         }
-      }finally {
+      } finally {
         curr = requestChannel.receiveResponse(id)
       }
     }

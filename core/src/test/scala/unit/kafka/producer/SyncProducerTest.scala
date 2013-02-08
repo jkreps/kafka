@@ -20,7 +20,7 @@ package kafka.producer
 import java.net.SocketTimeoutException
 import java.util.Properties
 import junit.framework.Assert
-import kafka.admin.CreateTopicCommand
+import kafka.admin.AdminUtils
 import kafka.integration.KafkaServerTestHarness
 import kafka.message._
 import kafka.server.KafkaConfig
@@ -98,7 +98,7 @@ class SyncProducerTest extends JUnit3Suite with KafkaServerTestHarness {
     props.put("host", "localhost")
     props.put("port", server.socketServer.port.toString)
     val producer = new SyncProducer(new SyncProducerConfig(props))
-    CreateTopicCommand.createTopic(zkClient, "test", 1, 1)
+    AdminUtils.createTopic(zkClient, "test", 1, 1)
     TestUtils.waitUntilLeaderIsElectedOrChanged(zkClient, "test", 0, 500)
 
     val message1 = new Message(new Array[Byte](configs(0).messageMaxBytes + 1))
@@ -146,9 +146,9 @@ class SyncProducerTest extends JUnit3Suite with KafkaServerTestHarness {
     }
 
     // #2 - test that we get correct offsets when partition is owned by broker
-    CreateTopicCommand.createTopic(zkClient, "topic1", 1, 1)
+    AdminUtils.createTopic(zkClient, "topic1", 1, 1)
     TestUtils.waitUntilLeaderIsElectedOrChanged(zkClient, "topic1", 0, 500)
-    CreateTopicCommand.createTopic(zkClient, "topic3", 1, 1)
+    AdminUtils.createTopic(zkClient, "topic3", 1, 1)
     TestUtils.waitUntilLeaderIsElectedOrChanged(zkClient, "topic3", 0, 500)
 
     val response2 = producer.send(request)
