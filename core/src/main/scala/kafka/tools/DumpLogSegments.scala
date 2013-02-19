@@ -141,7 +141,8 @@ object DumpLogSegments {
       if(printContents) {
         if(msg.hasKey)
           print(" key: " + Utils.readString(messageAndOffset.message.payload, "UTF-8"))
-        print(" payload: " + Utils.readString(messageAndOffset.message.payload, "UTF-8"))
+        val payload = if(messageAndOffset.message.isNull) null else Utils.readString(messageAndOffset.message.payload, "UTF-8")
+        print(" payload: " + payload)
       }
       println()
     }

@@ -249,7 +249,7 @@ class DefaultEventHandler[K,V](config: ProducerConfig,
         if (logger.isTraceEnabled) {
           val successfullySentData = response.status.filter(_._2.error == ErrorMapping.NoError)
           successfullySentData.foreach(m => messagesPerTopic(m._1).foreach(message =>
-            trace("Successfully sent message: %s".format(Utils.readString(message.message.payload)))))
+            trace("Successfully sent message: %s".format(if(message.message.isNull) null else Utils.readString(message.message.payload)))))
         }
         failedTopicPartitions = response.status.filter(_._2.error != ErrorMapping.NoError).toSeq
                                     .map(partitionStatus => partitionStatus._1)

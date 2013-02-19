@@ -23,12 +23,12 @@ import java.nio.ByteBuffer
 import kafka.utils._
 
 trait OffsetMap {
-  def capacity: Int
+  def slots: Int
   def put(key: ByteBuffer, offset: Long)
   def get(key: ByteBuffer): Long
   def clear()
   def size: Int
-  def utilization: Double = size.toDouble / capacity
+  def utilization: Double = size.toDouble / slots
 }
 
 /**
@@ -38,7 +38,7 @@ trait OffsetMap {
  * @param hashAlgorithm The hash algorithm instance to use: MD2, MD5, SHA-1, SHA-256, SHA-384, SHA-512
  */
 @nonthreadsafe
-class SkimpyOffsetMap(val memory: Int, val maxLoadFactor: Double, val hashAlgorithm: String = "MD5") extends OffsetMap {
+class SkimpyOffsetMap(val memory: Int, val hashAlgorithm: String = "MD5") extends OffsetMap {
   private val bytes = ByteBuffer.allocate(memory)
   
   /* the hash algorithm instance to use, defualt is MD5 */
@@ -65,7 +65,7 @@ class SkimpyOffsetMap(val memory: Int, val maxLoadFactor: Double, val hashAlgori
   /**
    * The maximum number of entries this map can contain before it exceeds the max load factor
    */
-  override val capacity: Int = (maxLoadFactor * memory / bytesPerEntry).toInt
+  val slots: Int = (memory / bytesPerEntry).toInt
   
   /**
    * Associate a offset with a key.
@@ -73,14 +73,20 @@ class SkimpyOffsetMap(val memory: Int, val maxLoadFactor: Double, val hashAlgori
    * @param offset The offset
    */
   override def put(key: ByteBuffer, offset: Long) {
-    if(size + 1 > capacity)
-      throw new IllegalStateException("Attempt to add to a full offset map with a maximum capacity of %d.".format(capacity))
     hash(key, hash1)
-    bytes.position(offsetFor(hash1))
+    val pos = offsetFor(hash1)
+    if(isEmpty(pos))
+      this.entries += 1
+    bytes.position(pos)
     bytes.put(hash1)
     bytes.putLong(offset)
-    entries += 1
   }
+  
+  /**
+   * Check that there is no entry at the given offset
+   */
+  private def isEmpty(offset: Int): Boolean = 
+    bytes.getLong(offset) == 0 && bytes.getLong(offset + 8) == 0
   
   /**
    * Get the offset associated with this key. This method is approximate,
@@ -118,7 +124,7 @@ class SkimpyOffsetMap(val memory: Int, val maxLoadFactor: Double, val hashAlgori
    * Choose a slot in the array for this hash
    */
   private def offsetFor(hash: Array[Byte]): Int = 
-    bytesPerEntry * (Utils.abs(Utils.readInt(hash, 0)) % capacity)
+    bytesPerEntry * (Utils.abs(Utils.readInt(hash, 0)) % slots)
   
   /**
    * The offset at which we have stored the given key

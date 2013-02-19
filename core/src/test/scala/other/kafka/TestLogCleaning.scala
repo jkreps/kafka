@@ -66,6 +66,11 @@ object TestLogCleaning {
                           .describedAs("count")
                           .ofType(classOf[java.lang.Integer])
                           .defaultsTo(1)
+    val percentDeletesOpt = parser.accepts("percent-deletes", "The percentage of updates that are deletes.")
+    		                      .withRequiredArg
+    		                      .describedAs("percent")
+    		                      .ofType(classOf[java.lang.Integer])
+    		                      .defaultsTo(0)
     val zkConnectOpt = parser.accepts("zk", "Zk url.")
                              .withRequiredArg
                              .describedAs("url")
@@ -86,6 +91,7 @@ object TestLogCleaning {
     
     // parse options
     val messages = options.valueOf(numMessagesOpt).longValue
+    val percentDeletes = options.valueOf(percentDeletesOpt).intValue
     val dups = options.valueOf(numDupsOpt).intValue
     val brokerUrl = options.valueOf(brokerOpt)
     val topicCount = options.valueOf(topicsOpt).intValue
@@ -97,7 +103,7 @@ object TestLogCleaning {
     val topics = (0 until topicCount).map("log-cleaner-test-" + testId + "-" + _).toArray
     
     println("Producing %d messages...".format(messages))
-    val producedDataFile = produceMessages(brokerUrl, topics, messages, dups, cleanup)
+    val producedDataFile = produceMessages(brokerUrl, topics, messages, dups, percentDeletes, cleanup)
     println("Sleeping for %d seconds...".format(sleepSecs))
     Thread.sleep(sleepSecs * 1000)
     println("Consuming messages...")
@@ -110,46 +116,67 @@ object TestLogCleaning {
     
     println("Validating output files...")
     validateOutput(externalSort(producedDataFile), externalSort(consumedDataFile))
-    println("All done.")
   }
   
   def lineCount(file: File): Int = io.Source.fromFile(file).getLines.size
   
-  def validateOutput(produced: BufferedReader, consumed: BufferedReader) {
-    while(true) {
-      val prod = readFinalValue(produced)
-      val cons = readFinalValue(consumed)
-      if(prod == null && cons == null) {
-        return
-      } else if(prod != cons) {
-        System.err.println("Validation failed prod = %s, cons = %s!".format(prod, cons))
-        System.exit(1)
+  def validateOutput(producedReader: BufferedReader, consumedReader: BufferedReader) {
+    val produced = valuesIterator(producedReader)
+    val consumed = valuesIterator(consumedReader)
+    var total = 0
+    var mismatched = 0
+    while(produced.hasNext && consumed.hasNext) {
+      val p = produced.next()
+      val c = consumed.next()
+      if(p != c) {
+        println("Mismatched values found in iteration: produced = " + p + " consumed = " + c)
+        mismatched += 1
+      }
+      total += 1
+    }
+    require(!produced.hasNext, "Additional values produced not found in consumer log.")
+    require(!consumed.hasNext, "Additional values consumed not found in producer log.")
+    println("Validated " + total + " values, " + mismatched + " mismatches.")
+    require(mismatched == 0, "Non-zero number of row mismatches.")
+  }
+  
+  def valuesIterator(reader: BufferedReader) = {
+    new IteratorTemplate[TestRecord] {
+      def makeNext(): TestRecord = {
+        var next = readNext(reader)
+        while(next != null && next.delete)
+          next = readNext(reader)
+        if(next == null)
+          allDone()
+        else
+          next
       }
     }
   }
   
-  def readFinalValue(reader: BufferedReader): (String, Int, Int) = {
-    def readTuple() = {
-      val line = reader.readLine
-      if(line == null)
-        null
-      else
-        line.split("\t")
-    }
-    var prev = readTuple()
-    if(prev == null)
+  def readNext(reader: BufferedReader): TestRecord = {
+    var line = reader.readLine()
+    if(line == null)
       return null
+    var curr = new TestRecord(line)
     while(true) {
-      reader.mark(1024)
-      val curr = readTuple()
-      if(curr == null || curr(0) != prev(0) || curr(1) != prev(1)) {
-        reader.reset()
-        return (prev(0), prev(1).toInt, prev(2).toInt)
-      } else {
-        prev = curr
-      }
+      line = peekLine(reader)
+      if(line == null)
+        return curr
+      val next = new TestRecord(line)
+      if(next == null || next.topicAndKey != curr.topicAndKey)
+        return curr
+      curr = next
+      reader.readLine()
     }
-    return null
+    null
+  }
+  
+  def peekLine(reader: BufferedReader) = {
+    reader.mark(4096)
+    val line = reader.readLine
+    reader.reset()
+    line
   }
   
   def externalSort(file: File): BufferedReader = {
@@ -161,7 +188,8 @@ object TestLogCleaning {
   def produceMessages(brokerUrl: String, 
                       topics: Array[String], 
                       messages: Long, 
-                      dups: Int, 
+                      dups: Int,
+                      percentDeletes: Int,
                       cleanup: Boolean): File = {
     val producerProps = new Properties
     producerProps.setProperty("producer.type", "async")
@@ -174,14 +202,22 @@ object TestLogCleaning {
     val rand = new Random(1)
     val keyCount = (messages / dups).toInt
     val producedFile = File.createTempFile("kafka-log-cleaner-produced-", ".txt")
+    println("Logging produce requests to " + producedFile.getAbsolutePath)
     if(cleanup)
       producedFile.deleteOnExit()
     val producedWriter = new BufferedWriter(new FileWriter(producedFile), 1024*1024)
     for(i <- 0L until (messages * topics.length)) {
       val topic = topics((i % topics.length).toInt)
       val key = rand.nextInt(keyCount)
-      producer.send(KeyedMessage(topic = topic, key = key.toString, message = i.toString))
-      producedWriter.write("%s\t%s\t%s\n".format(topic, key, i))
+      val delete = i % 100 < percentDeletes
+      val message = 
+        if(delete)
+          KeyedMessage[String, String](topic = topic, key = key.toString, message = null)
+        else
+          KeyedMessage[String, String](topic = topic, key = key.toString, message = i.toString)
+      producer.send(message)
+      producedWriter.write(TestRecord(topic, key, i, delete).toString)
+      producedWriter.newLine()
     }
     producedWriter.close()
     producer.close()
@@ -196,14 +232,19 @@ object TestLogCleaning {
     val connector = new ZookeeperConsumerConnector(new ConsumerConfig(consumerProps))
     val streams = connector.createMessageStreams(topics.map(topic => (topic, 1)).toMap, new StringDecoder, new StringDecoder)
     val consumedFile = File.createTempFile("kafka-log-cleaner-consumed-", ".txt")
+    println("Logging consumed messages to " + consumedFile.getAbsolutePath)
     if(cleanup)
       consumedFile.deleteOnExit()
     val consumedWriter = new BufferedWriter(new FileWriter(consumedFile))
     for(topic <- topics) {
       val stream = streams(topic).head
       try {
-        for(item <- stream)
-          consumedWriter.write("%s\t%s\t%s\n".format(topic, item.key, item.message))
+        for(item <- stream) {
+          val delete = item.message == null
+          val value = if(delete) -1L else item.message.toLong
+          consumedWriter.write(TestRecord(topic, item.key.toInt, value, delete).toString)
+          consumedWriter.newLine()
+        }
       } catch {
         case e: ConsumerTimeoutException => 
       }
@@ -213,4 +254,11 @@ object TestLogCleaning {
     consumedFile
   }
   
+}
+
+case class TestRecord(val topic: String, val key: Int, val value: Long, val delete: Boolean) {
+  def this(pieces: Array[String]) = this(pieces(0), pieces(1).toInt, pieces(2).toLong, pieces(3) == "d")
+  def this(line: String) = this(line.split("\t"))
+  override def toString() = topic + "\t" +  key + "\t" + value + "\t" + (if(delete) "d" else "u")
+  def topicAndKey = topic + key
 }

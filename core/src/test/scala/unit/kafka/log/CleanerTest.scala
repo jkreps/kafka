@@ -52,7 +52,7 @@ class CleanerTest extends JUnitSuite {
     
     // append messages to the log until we have four segments
     while(log.numberOfSegments < 4)
-      log.append(messages(log.logEndOffset.toInt, log.logEndOffset.toInt))
+      log.append(message(log.logEndOffset.toInt, log.logEndOffset.toInt))
     val keysFound = keysInLog(log)
     assertEquals((0L until log.logEndOffset), keysFound)
     
@@ -65,6 +65,30 @@ class CleanerTest extends JUnitSuite {
     cleaner.cleanSegments(log, log.logSegments.take(3).toSeq, map, 0)
     val shouldRemain = keysInLog(log).filter(!keys.contains(_))
     assertEquals(shouldRemain, keysInLog(log))
+  }
+  
+  @Test
+  def testCleaningWithDeletes() {
+    val cleaner = makeCleaner(Int.MaxValue)
+    val log = makeLog(config = logConfig.copy(segmentSize = 1024))
+    
+    // append messages with the keys 0 through N
+    while(log.numberOfSegments < 2)
+      log.append(message(log.logEndOffset.toInt, log.logEndOffset.toInt))
+      
+    // delete all even keys between 0 and N
+    val leo = log.logEndOffset
+    for(key <- 0 until leo.toInt by 2)
+      log.append(deleteMessage(key))
+      
+    // append some new unique keys to pad out to a new active segment
+    while(log.numberOfSegments < 4)
+      log.append(message(log.logEndOffset.toInt, log.logEndOffset.toInt))
+      
+    cleaner.clean(LogToClean(TopicAndPartition("test", 0), log, 0))
+    val keys = keysInLog(log).toSet
+    assertTrue("None of the keys we deleted should still exist.", 
+               (0 until leo.toInt by 2).forall(!keys.contains(_)))
   }
   
   /* extract all the keys from a log */
@@ -82,7 +106,7 @@ class CleanerTest extends JUnitSuite {
     
     // append messages to the log until we have four segments
     while(log.numberOfSegments < 2)
-      log.append(messages(log.logEndOffset.toInt, log.logEndOffset.toInt))
+      log.append(message(log.logEndOffset.toInt, log.logEndOffset.toInt))
       
     log.truncateTo(log.logEndOffset-2)
     val keys = keysInLog(log)
@@ -170,40 +194,28 @@ class CleanerTest extends JUnitSuite {
     checkRange(map, segments(3).baseOffset.toInt, log.logEndOffset.toInt)
   }
   
-  /**
-   * Test that we don't exceed the maximum capacity of the offset map, that is that an offset map
-   * with a max size of 1000 will only clean 1000 new entries even if more than that are available.
-   */
-  @Test
-  def testBuildOffsetMapOverCapacity() {
-    val map = new FakeOffsetMap(1000)
-    val log = makeLog()
-    val cleaner = makeCleaner(Int.MaxValue)
-    val vals = 0 until 1001
-    val offsets = writeToLog(log, vals zip vals)
-    val lastOffset = cleaner.buildOffsetMap(log, vals.start, vals.end, map)
-    assertEquals("Shouldn't go beyond the capacity of the offset map.", 1000, lastOffset)
-  }
-  
   def makeLog(dir: File = dir, config: LogConfig = logConfig) =
     new Log(dir = dir, config = config, needsRecovery = false, scheduler = time.scheduler, time = time)
   
   def makeCleaner(capacity: Int) = 
-    new Cleaner(id = 0, new FakeOffsetMap(capacity), ioBufferSize = 64*1024, maxIoBufferSize = 64*1024, throttler = throttler, time = time)
+    new Cleaner(id = 0, new FakeOffsetMap(capacity), ioBufferSize = 64*1024, maxIoBufferSize = 64*1024, dupBufferLoadFactor = 0.75, throttler = throttler, time = time)
   
   def writeToLog(log: Log, seq: Iterable[(Int, Int)]): Iterable[Long] = {
     for((key, value) <- seq)
-      yield log.append(messages(key, value)).firstOffset
+      yield log.append(message(key, value)).firstOffset
   }
   
   def key(id: Int) = ByteBuffer.wrap(id.toString.getBytes)
   
-  def messages(key: Int, value: Int) = 
+  def message(key: Int, value: Int) = 
     new ByteBufferMessageSet(new Message(key=key.toString.getBytes, bytes=value.toString.getBytes))
+  
+  def deleteMessage(key: Int) =
+    new ByteBufferMessageSet(new Message(key=key.toString.getBytes, bytes=null))
   
 }
 
-class FakeOffsetMap(val capacity: Int) extends OffsetMap {
+class FakeOffsetMap(val slots: Int) extends OffsetMap {
   val map = new java.util.HashMap[String, Long]()
   
   private def keyFor(key: ByteBuffer) = 

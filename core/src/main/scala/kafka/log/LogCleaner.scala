@@ -20,6 +20,7 @@ package kafka.log
 import scala.collection._
 import scala.math
 import java.nio._
+import java.util.Random
 import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic._
@@ -162,10 +163,10 @@ class LogCleaner(val config: CleanerConfig,
   private class CleanerThread extends Thread {
     val cleaner = new Cleaner(id = threadId.getAndIncrement(),
                               offsetMap = new SkimpyOffsetMap(memory = config.dedupeBufferSize / config.numThreads, 
-                                                              maxLoadFactor = config.dedupeBufferLoadFactor, 
                                                               hashAlgorithm = config.hashAlgorithm),
                               ioBufferSize = config.ioBufferSize / config.numThreads / 2,
                               maxIoBufferSize = config.maxMessageSize,
+                              dupBufferLoadFactor = config.dedupeBufferLoadFactor,
                               throttler = throttler,
                               time = time)
     
@@ -251,13 +252,23 @@ private[log] class Cleaner(val id: Int,
                            offsetMap: OffsetMap,
                            ioBufferSize: Int,
                            maxIoBufferSize: Int,
+                           dupBufferLoadFactor: Double,
                            throttler: Throttler,
                            time: Time) extends Logging {
 
   this.logIdent = "Cleaner " + id + ":"
+  
+  /* the percentage chance that we reclean an old segment file*/
+  val RecleanRate = 0.1d
+  
+  /* stats on this cleaning */
   val stats = new CleanerStats(time)
-  private var readBuffer = ByteBuffer.allocate(ioBufferSize) // buffer for disk read I/O
-  private var writeBuffer = ByteBuffer.allocate(ioBufferSize) // buffer for disk write I/O
+  
+  /* buffer used for read i/o */
+  private var readBuffer = ByteBuffer.allocate(ioBufferSize)
+  
+  /* buffer used for write i/o */
+  private var writeBuffer = ByteBuffer.allocate(ioBufferSize)
 
   /**
    * Clean the given log
@@ -275,7 +286,7 @@ private[log] class Cleaner(val id: Int,
     val truncateCount = log.numberOfTruncates
     
     // build the offset map
-    val upperBoundOffset = math.min(log.activeSegment.baseOffset, cleanable.firstDirtyOffset + offsetMap.capacity)
+    val upperBoundOffset = log.activeSegment.baseOffset
     val endOffset = buildOffsetMap(log, cleanable.firstDirtyOffset, upperBoundOffset, offsetMap) + 1
     stats.indexDone()
     
@@ -357,7 +368,7 @@ private[log] class Cleaner(val id: Int,
         require(key != null, "Found null key in log segment %s which is marked as dedupe.".format(source.log.file.getAbsolutePath))
         val lastOffset = map.get(key)
         /* retain the record if it isn't present in the map OR it is present but this offset is the highest (and it's not a delete) */
-        val retainRecord = lastOffset < 0 || (entry.offset >= lastOffset && entry.message.payload != null)
+        val retainRecord = lastOffset < 0 || (entry.offset >= lastOffset && !entry.message.isNull)
         if (retainRecord) {
           ByteBufferMessageSet.writeMessage(writeBuffer, entry.message, entry.offset)
           stats.recopyMessage(size)
@@ -443,16 +454,55 @@ private[log] class Cleaner(val id: Int,
    */
   private[log] def buildOffsetMap(log: Log, start: Long, end: Long, map: OffsetMap): Long = {
     map.clear()
-    val segments = log.logSegments(start, end)
-    info("Building offset map for log %s for %d segments in offset range [%d, %d).".format(log.name, segments.size, start, end))
-    var offset = segments.head.baseOffset
-    require(offset == start, "Last clean offset is %d but segment base offset is %d for log %s.".format(start, offset, log.name))
-    for (segment <- segments) {
+    val dirty = log.logSegments(start, end).toSeq
+    val reclean = chooseSegmentsToReclean(log, start, end)
+    info("Building offset map for log %s for %d segments (%d dirty, %d clean) in offset range [%d, %d)."
+           .format(log.name, dirty.size + reclean.size, dirty.size, reclean.size, start, end))
+    
+    // first add all the segments we are recleaning to the offset map
+    for (segment <- reclean) {
       checkDone()
-      offset = buildOffsetMap(segment, map)
+      buildOffsetMap(segment, map)
+    }
+    
+    // then add all the dirty segments. we must take at least map.slots * load_factor,
+    // but we may be able to fit more (if there is lots of duplication in the dirty section of the log)
+    var offset = dirty.head.baseOffset
+    require(offset == start, "Last clean offset is %d but segment base offset is %d for log %s.".format(start, offset, log.name))
+    val minStopOffset = (start + map.slots * this.dupBufferLoadFactor).toLong
+    for (segment <- dirty) {
+      checkDone()
+      if(segment.baseOffset <= minStopOffset || map.utilization < this.dupBufferLoadFactor)
+        offset = buildOffsetMap(segment, map)
     }
     info("Offset map for log %s complete.".format(log.name))
     offset
+  }
+  
+  /**
+   * Choose segments to include in the offset map for log cleaning. This is mostly the dirty section
+   * of the log, but we include a few already cleaned segments too to clean up duplicates missed
+   * in prior cleanings.
+   * 
+   * The exact heuristic we use for choosing segments to reclean isn't too relevant, as long as it
+   * gives preference to newer segments (no point deduping the same old segments over and over) and
+   * gives a non-zero probability of selecting any particular segment.
+   * 
+   * @param log The log
+   * @param startDirty The beginning of the dirty section
+   * @param endDirty The end of the dirty section
+   */
+  def chooseSegmentsToReclean(log: Log, startDirty: Long, endDirty: Long): List[LogSegment] = {
+    var clean = log.logSegments(0, startDirty).toList.reverse    
+    val segmentsToReclean = math.min(1.0, math.round(RecleanRate * clean.size)).toInt
+    val random = new Random()
+    var reclean = new mutable.ArrayBuffer[LogSegment](segmentsToReclean)
+    while(reclean.size < segmentsToReclean) {
+      if(random.nextDouble() < RecleanRate)
+        reclean += clean.head
+      clean = clean.tail
+    }
+    reclean.reverse.toList
   }
 
   /**

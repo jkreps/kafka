@@ -33,7 +33,7 @@ class OffsetMapTest extends JUnitSuite {
   
   @Test
   def testClear() {
-    val map = new SkimpyOffsetMap(4000, 0.75)
+    val map = new SkimpyOffsetMap(4000)
     for(i <- 0 until 10)
       map.put(key(i), i)
     for(i <- 0 until 10)
@@ -43,24 +43,10 @@ class OffsetMapTest extends JUnitSuite {
       assertEquals(map.get(key(i)), -1L)
   }
   
-  @Test
-  def testCapacity() {
-    val map = new SkimpyOffsetMap(1024, 0.75)
-    var i = 0
-    while(map.size < map.capacity) {
-      map.put(key(i), i)
-      i += 1
-    }
-    // now the map is full, it should throw an exception
-    intercept[IllegalStateException] {
-      map.put(key(i), i)
-    }
-  }
-  
   def key(key: Int) = ByteBuffer.wrap(key.toString.getBytes)
   
   def validateMap(items: Int) {
-    val map = new SkimpyOffsetMap(items * 2 * 24, 0.75)
+    val map = new SkimpyOffsetMap(items * 2 * 24)
     for(i <- 0 until items)
       map.put(key(i), i)
     var misses = 0
