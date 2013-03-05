@@ -156,23 +156,23 @@ object TopicCommand {
     val deleteOpt = parser.accepts("delete", "Delete the topic.")
     val describeOpt = parser.accepts("describe", "List details for the given topics.")
     val helpOpt = parser.accepts("help", "Print usage information.")
-    val topicOpt = parser.accepts("topic", "The topic to be created.")
+    val topicOpt = parser.accepts("topic", "The topic to be create, alter, delete, or describe.")
                          .withRequiredArg
                          .describedAs("topic")
                          .ofType(classOf[String])
-    val configOpt = parser.accepts("config", "A topic configuration for this topic.")
+    val configOpt = parser.accepts("config", "A topic configuration for the topic being created or altered.")
                           .withRequiredArg
                           .describedAs("name=value")
                           .ofType(classOf[String])
-    val partitionsOpt = parser.accepts("partitions", "The number of partitions for the topic.")
+    val partitionsOpt = parser.accepts("partitions", "The number of partitions for the topic being created.")
                            .withRequiredArg
                            .describedAs("# of partitions")
                            .ofType(classOf[java.lang.Integer])
-    val replicationFactorOpt = parser.accepts("replication-factor", "The replication factor for each partition in the topic.")
+    val replicationFactorOpt = parser.accepts("replication-factor", "The replication factor for each partition in the topic being created.")
                            .withRequiredArg
                            .describedAs("replication factor")
                            .ofType(classOf[java.lang.Integer])
-    val replicaAssignmentOpt = parser.accepts("replica-assignment", "A list of manual partition-to-broker assignments.")
+    val replicaAssignmentOpt = parser.accepts("replica-assignment", "A list of manual partition-to-broker assignments for the topic being created.")
                            .withRequiredArg
                            .describedAs("broker_id_for_part1_replica1 : broker_id_for_part1_replica2 , " +
                                         "broker_id_for_part2_replica1 : broker_id_for_part2_replica2 , ...")

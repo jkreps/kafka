@@ -45,19 +45,6 @@ class PrimitiveApiTest extends JUnit3Suite with ProducerConsumerTestHarness with
   val configs = List(config)
   val requestHandlerLogger = Logger.getLogger(classOf[KafkaRequestHandler])
 
-  override def setUp() {
-    super.setUp
-    // temporarily set request handler logger to a higher level
-    //requestHandlerLogger.setLevel(Level.FATAL)
-  }
-
-  override def tearDown() {
-    // restore set request handler logger to a higher level
-    requestHandlerLogger.setLevel(Level.ERROR)
-
-    super.tearDown
-  }
-
   def testFetchRequestCanProperlySerialize() {
     val request = new FetchRequestBuilder()
       .clientId("test-client")

@@ -66,10 +66,10 @@ class ReplicaFetchTest extends JUnit3Suite with ZooKeeperTestHarness  {
     def logsMatch(): Boolean = {
       var result = true
       for (topic <- List(topic1, topic2)) {
-        val tandp = TopicAndPartition(topic, partition)
-        val expectedOffset = brokers.head.getLogManager().getLog(tandp).get.logEndOffset
+        val topicAndPart = TopicAndPartition(topic, partition)
+        val expectedOffset = brokers.head.getLogManager().getLog(topicAndPart).get.logEndOffset
         result = result && expectedOffset > 0 && brokers.foldLeft(true) { (total, item) => total &&
-          (expectedOffset == item.getLogManager().getLog(tandp).get.logEndOffset) }
+          (expectedOffset == item.getLogManager().getLog(topicAndPart).get.logEndOffset) }
       }
       result
     }

@@ -30,7 +30,7 @@ import org.I0Itec.zkclient.{IZkChildListener, ZkClient}
  * It works as follows.
  * 
  * Config is stored under the path
- *   /brokers/topics/<topic_name/config
+ *   /brokers/topics/<topic_name>/config
  * This znode stores the topic-overrides for this topic (but no defaults) in properties format.
  * 
  * To avoid watching all topics for changes instead we have a notification path
@@ -77,7 +77,7 @@ class TopicConfigManager(private val zkClient: ZkClient,
    */
   private def processAllConfigChanges() {
     val configChanges = zkClient.getChildren(ZkUtils.TopicConfigChangesPath)
-    processConfigChanges(JavaConversions.asBuffer(configChanges))
+    processConfigChanges(JavaConversions.asBuffer(configChanges).sorted)
   }
 
   /**
@@ -85,29 +85,31 @@ class TopicConfigManager(private val zkClient: ZkClient,
    */
   private def processConfigChanges(notifications: Seq[String]) {
     if (notifications.size > 0) {
-      info("Processing %d change notifications...".format(notifications.size))
+      info("Processing %d topic config change notification(s)...".format(notifications.size))
       val now = time.milliseconds
       val logs = logManager.logsByTopicPartition.toBuffer
       val logsByTopic = logs.groupBy(_._1.topic).mapValues(_.map(_._2))
       val lastChangeId = notifications.map(changeNumber).max
       for (notification <- notifications) {
         val changeId = changeNumber(notification)
-        val changeZnode = ZkUtils.TopicConfigChangesPath + "/" + notification
-        val (topic, stat) = ZkUtils.readData(zkClient, changeZnode)
-        if (changeId > lastExecutedChange && logsByTopic.contains(topic)) {
-          /* combine the default properties with the overrides in zk to create the new LogConfig */
-          val props = new Properties(logManager.defaultConfig.toProps)
-          props.putAll(AdminUtils.fetchTopicConfig(zkClient, topic))
-          val logConfig = LogConfig.fromProps(props)
-          for (log <- logsByTopic(topic))
-            log.config = logConfig
-          lastExecutedChange = changeId
-          info("Processed topic config change %d for topic %s, setting new config to %s.".format(changeId, topic, props))
-        } else if (now - stat.getCtime > changeExpirationMs && changeId != lastChangeId) {
-          /* this change is now obsolete, try to delete it unless it is the last change left */
-          val deleted = ZkUtils.deletePath(zkClient, changeZnode)
-          if (deleted)
-            debug("Deleted old config change %d for topic %s.".format(changeId, topic))
+        if (changeId > lastExecutedChange) {
+          val changeZnode = ZkUtils.TopicConfigChangesPath + "/" + notification
+          val (topic, stat) = ZkUtils.readData(zkClient, changeZnode)
+          if (logsByTopic.contains(topic)) {
+            /* combine the default properties with the overrides in zk to create the new LogConfig */
+            val props = new Properties(logManager.defaultConfig.toProps)
+            props.putAll(AdminUtils.fetchTopicConfig(zkClient, topic))
+            val logConfig = LogConfig.fromProps(props)
+            for (log <- logsByTopic(topic))
+              log.config = logConfig
+            lastExecutedChange = changeId
+            info("Processed topic config change %d for topic %s, setting new config to %s.".format(changeId, topic, props))
+          } else if (now - stat.getCtime > changeExpirationMs && changeId != lastChangeId) {
+            /* this change is now obsolete, try to delete it unless it is the last change left */
+            val deleted = ZkUtils.deletePath(zkClient, changeZnode)
+            if (deleted)
+              debug("Deleted old config change %d for topic %s.".format(changeId, topic))
+          }
         }
       }
     }

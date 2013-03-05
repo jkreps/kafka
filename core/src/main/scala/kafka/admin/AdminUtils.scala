@@ -24,7 +24,7 @@ import kafka.api.{TopicMetadata, PartitionMetadata}
 import kafka.cluster.Broker
 import kafka.log.LogConfig
 import kafka.server.TopicConfigManager
-import kafka.utils.{Logging, Utils, ZkUtils}
+import kafka.utils.{Logging, Utils, ZkUtils, Json}
 import org.I0Itec.zkclient.ZkClient
 import org.I0Itec.zkclient.exception._
 import scala.collection._
@@ -120,9 +120,8 @@ object AdminUtils extends Logging {
       throw new TopicExistsException("Topic \"%s\" already exists.".format(topic))
     partitionReplicaAssignment.values.foreach(reps => require(reps.size == reps.toSet.size, "Duplicate replica assignment found: " + partitionReplicaAssignment))
     
-    // write out the config is there is any, this isn't transactional with the partition assignments
-    if(config.size > 0)
-      ZkUtils.updatePersistentPath(zkClient, ZkUtils.getTopicConfigPath(topic), Utils.asString(config))
+    // write out the config if there is any, this isn't transactional with the partition assignments
+    writeTopicConfig(zkClient, topic, config)
     
     // create the partition assignment
     val json = Utils.mapToJson(partitionReplicaAssignment.map(e => (e._1.toString -> e._2.map(_.toString))))
@@ -142,17 +141,37 @@ object AdminUtils extends Logging {
       throw new AdminOperationException("Topic \"%s\" does not exist.".format(topic))
     
     // write the new config--may not exist if there were previously no overrides
-    ZkUtils.updatePersistentPath(zkClient, ZkUtils.getTopicConfigPath(topic), Utils.asString(config))
+    writeTopicConfig(zkClient, topic, config)
     
     // create the change notification
     zkClient.createPersistentSequential(ZkUtils.TopicConfigChangesPath + "/" + TopicConfigChangeZnodePrefix, topic)
   }
   
+  /**
+   * Write out the topic config to zk, if there is any
+   */
+  private def writeTopicConfig(zkClient: ZkClient, topic: String, config: Properties) {
+    if(config.size > 0) {
+      val json = Utils.stringMapToJson(JavaConversions.asMap(config))
+      ZkUtils.updatePersistentPath(zkClient, ZkUtils.getTopicConfigPath(topic), json)
+    }
+  }
+  
+  /**
+   * Read the topic config (if any) from zk
+   */
   def fetchTopicConfig(zkClient: ZkClient, topic: String): Properties = {
     val str: String = zkClient.readData(ZkUtils.getTopicConfigPath(topic), true)
     val props = new Properties()
-    if(str != null)
-      props.load(new StringReader(str))
+    if(str != null) {
+      Json.parseFull(str) match {
+        case None => // there are no config overrides
+        case Some(map: Map[String, String]) => 
+          for((k,v) <- map)
+            props.setProperty(k, v)
+        case o => throw new IllegalArgumentException("Unexpected value in config: " + o)
+      }
+    }
     props
   }
   
