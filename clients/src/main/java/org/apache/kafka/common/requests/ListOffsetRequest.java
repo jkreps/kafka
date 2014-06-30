@@ -55,6 +55,10 @@ public class ListOffsetRequest extends AbstractRequestResponse {
             this.maxNumOffsets = maxNumOffsets;
         }
     }
+    
+    public ListOffsetRequest(Map<TopicPartition, PartitionData> offsetData) {
+    	this(-1, offsetData);
+    }
 
     public ListOffsetRequest(int replicaId, Map<TopicPartition, PartitionData> offsetData) {
         super(new Struct(curSchema));

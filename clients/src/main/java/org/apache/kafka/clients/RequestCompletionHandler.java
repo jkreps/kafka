@@ -13,8 +13,11 @@
 package org.apache.kafka.clients;
 
 /**
- * The states of a node connection
+ * A callback interface for attaching an action to be executed when a request is complete. This handler will also be
+ * invoked if there is a disconnection while handling the request.
  */
-public enum ConnectionState {
-    DISCONNECTED, CONNECTING, CONNECTED
+public interface RequestCompletionHandler {
+
+    public void onComplete(ClientResponse response);
+
 }

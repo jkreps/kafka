@@ -1,30 +1,23 @@
 /**
- * Licensed to the Apache Software Foundation (ASF) under one or more
- * contributor license agreements.  See the NOTICE file distributed with
- * this work for additional information regarding copyright ownership.
- * The ASF licenses this file to You under the Apache License, Version 2.0
- * (the "License"); you may not use this file except in compliance with
- * the License.  You may obtain a copy of the License at
- *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Licensed to the Apache Software Foundation (ASF) under one or more contributor license agreements. See the NOTICE
+ * file distributed with this work for additional information regarding copyright ownership. The ASF licenses this file
+ * to You under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the
+ * License. You may obtain a copy of the License at
+ * 
+ * http://www.apache.org/licenses/LICENSE-2.0
+ * 
+ * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
+ * an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
+ * specific language governing permissions and limitations under the License.
  */
 package org.apache.kafka.clients.producer;
 
 import static java.util.Arrays.asList;
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotSame;
 import static org.junit.Assert.assertTrue;
 
 import java.util.List;
 
-
-import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.internals.Partitioner;
 import org.apache.kafka.common.Cluster;
 import org.apache.kafka.common.Node;
@@ -48,17 +41,19 @@ public class PartitionerTest {
 
     @Test
     public void testUserSuppliedPartitioning() {
-        assertEquals("If the user supplies a partition we should use it.",
-                     0,
-                     partitioner.partition(new ProducerRecord<byte[], byte[]>("test", 0, key, value), cluster));
+        assertEquals("If the user supplies a partition we should use it.", 0, partitioner.partition(new ProducerRecord<byte[], byte[]>("test",
+                                                                                                                       0,
+                                                                                                                       key,
+                                                                                                                       value), cluster));
     }
 
     @Test
     public void testKeyPartitionIsStable() {
         int partition = partitioner.partition(new ProducerRecord<byte[], byte[]>("test", key, value), cluster);
-        assertEquals("Same key should yield same partition",
-                     partition,
-                     partitioner.partition(new ProducerRecord<byte[], byte[]>("test", key, "value2".getBytes()), cluster));
+        assertEquals("Same key should yield same partition", partition, partitioner.partition(new ProducerRecord<byte[], byte[]>("test",
+                                                                                                                 key,
+                                                                                                                 "value2".getBytes()),
+                                                                                              cluster));
     }
 
     @Test
@@ -66,9 +61,8 @@ public class PartitionerTest {
         int startPart = partitioner.partition(new ProducerRecord<byte[], byte[]>("test", value), cluster);
         for (int i = 1; i <= 100; i++) {
             int partition = partitioner.partition(new ProducerRecord<byte[], byte[]>("test", value), cluster);
-            assertEquals("Should yield a different partition each call with round-robin partitioner",
-                partition, (startPart + i) % 2);
-      }
+            assertEquals("Should yield a different partition each call with round-robin partitioner", partition, (startPart + i) % 2);
+        }
     }
 
     @Test

@@ -121,11 +121,11 @@ final class ClusterConnectionStates {
     }
 
     /**
-     * Get the state of our connection to the given state
+     * Get the state of our connection to the given node
      * @param node The id of the node
      * @return The state of our connection
      */
-    private NodeConnectionState nodeState(int node) {
+    public NodeConnectionState nodeState(int node) {
         NodeConnectionState state = this.nodeState.get(node);
         if (state == null)
             throw new IllegalStateException("No entry found for node " + node);

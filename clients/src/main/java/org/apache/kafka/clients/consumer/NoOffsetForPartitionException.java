@@ -10,11 +10,20 @@
  * an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
  * specific language governing permissions and limitations under the License.
  */
-package org.apache.kafka.clients;
+
+package org.apache.kafka.clients.consumer;
+
+import org.apache.kafka.common.KafkaException;
 
 /**
- * The states of a node connection
+ * Indicates that there is no stored offset and no defined offset reset policy
  */
-public enum ConnectionState {
-    DISCONNECTED, CONNECTING, CONNECTED
+public class NoOffsetForPartitionException extends KafkaException {
+
+    private static final long serialVersionUID = 1L;
+
+    public NoOffsetForPartitionException(String message) {
+        super(message);
+    }
+
 }

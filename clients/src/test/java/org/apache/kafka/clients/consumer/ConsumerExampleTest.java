@@ -277,21 +277,24 @@ public class ConsumerExampleTest {
     }
 
     private Map<TopicPartition, Long> getLastCommittedOffsetsFromCustomStore() { return null; }
+    
     private void commitOffsetsToCustomStore(Map<TopicPartition, Long> consumedOffsets) {}
+    
     private Map<TopicPartition, Long> process(Map<String, ConsumerRecords> records) {
         Map<TopicPartition, Long> processedOffsets = new HashMap<TopicPartition, Long>();
-        for(Entry<String, ConsumerRecords> recordMetadata : records.entrySet()) {
-            List<ConsumerRecord> recordsPerTopic = recordMetadata.getValue().records();
-            for(int i = 0;i < recordsPerTopic.size();i++) {
-                ConsumerRecord record = recordsPerTopic.get(i);
-                // process record
-                try {
-                    processedOffsets.put(record.topicAndPartition(), record.offset());
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }                
-            }
-        }
+//        for(Entry<String, ConsumerRecords> recordMetadata : records.entrySet()) {
+//        	TopicPartition tp = new TopicPartition(recordMetadata.getKey(), recordMetadata.getValue().p);
+//            List<ConsumerRecord> recordsPerTopic = recordMetadata.getValue().records();
+//            for(int i = 0;i < recordsPerTopic.size();i++) {
+//                ConsumerRecord record = recordsPerTopic.get(i);
+//                // process record
+//                try {
+//                    processedOffsets.put(record.topicAndPartition(), record.offset());
+//                } catch (Exception e) {
+//                    e.printStackTrace();
+//                }                
+//            }
+//        }
         return processedOffsets; 
     }
 }

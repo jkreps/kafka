@@ -32,6 +32,7 @@ import kafka.common.{TopicAndPartition, ErrorMapping, UnknownTopicOrPartitionExc
 import kafka.utils.{StaticPartitioner, TestUtils, Utils}
 import kafka.serializer.StringEncoder
 import java.util.Properties
+import TestUtils._
 
 /**
  * End to end tests of the primitive apis against a local server
@@ -263,17 +264,6 @@ class PrimitiveApiTest extends JUnit3Suite with ProducerConsumerTestHarness with
     for( (topic, partition) <- topics) {
       val fetched = response.messageSet(topic, partition)
       assertEquals(messages(topic), fetched.map(messageAndOffset => Utils.readString(messageAndOffset.message.payload)))
-    }
-  }
-
-  /**
-   * For testing purposes, just create these topics each with one partition and one replica for
-   * which the provided broker should the leader for.  Create and wait for broker to lead.  Simple.
-   */
-  private def createSimpleTopicsAndAwaitLeader(zkClient: ZkClient, topics: Iterable[String]) {
-    for( topic <- topics ) {
-      AdminUtils.createTopic(zkClient, topic, partitions = 1, replicationFactor = 1)
-      TestUtils.waitUntilLeaderIsElectedOrChanged(zkClient, topic, partition = 0)
     }
   }
 }

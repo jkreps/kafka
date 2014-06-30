@@ -39,7 +39,7 @@ public class BufferPoolTest {
      */
     @Test
     public void testSimple() throws Exception {
-        int totalMemory = 64 * 1024;
+        long totalMemory = 64 * 1024;
         int size = 1024;
         BufferPool pool = new BufferPool(totalMemory, size, false, metrics, time);
         ByteBuffer buffer = pool.allocate(size);
@@ -96,7 +96,7 @@ public class BufferPoolTest {
         ByteBuffer buffer = pool.allocate(1024);
         CountDownLatch doDealloc = asyncDeallocate(pool, buffer);
         CountDownLatch allocation = asyncAllocate(pool, 5 * 1024);
-        assertEquals("Allocation shouldn't have happened yet, waiting on memory.", 1, allocation.getCount());
+        assertEquals("Allocation shouldn't have happened yet, waiting on memory.", 1L, allocation.getCount());
         doDealloc.countDown(); // return the memory
         allocation.await();
     }
@@ -140,7 +140,7 @@ public class BufferPoolTest {
         int numThreads = 10;
         final int iterations = 50000;
         final int poolableSize = 1024;
-        final int totalMemory = numThreads / 2 * poolableSize;
+        final long totalMemory = numThreads / 2 * poolableSize;
         final BufferPool pool = new BufferPool(totalMemory, poolableSize, true, metrics, time);
         List<StressTestThread> threads = new ArrayList<StressTestThread>();
         for (int i = 0; i < numThreads; i++)

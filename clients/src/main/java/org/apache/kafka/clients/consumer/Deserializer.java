@@ -22,6 +22,7 @@ import org.apache.kafka.common.Configurable;
  * A class that implements this interface is expected to have a constructor with no parameter.
  */
 public interface Deserializer<T> extends Configurable {
+    
     /**
      *
      * @param topic Topic associated with the data
