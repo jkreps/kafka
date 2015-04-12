@@ -88,10 +88,16 @@
 		<subpackage name="producer">
 			<allow pkg="org.apache.kafka.clients.producer" />
 		</subpackage>
+		
+		<subpackage name="streaming">
+			<allow pkg="org.apache.kafka.clients.producer" exact-match="true" />
+			<allow pkg="org.apache.kafka.clients.consumer" exact-match="true" />
+			<allow pkg="org.apache.kafka.clients.streaming" />
+		</subpackage>
 	
 		<subpackage name="tools">
-			<allow pkg="org.apache.kafka.clients.producer" />
-			<allow pkg="org.apache.kafka.clients.consumer" />
+			<allow pkg="org.apache.kafka.clients.producer" exact-match="true" />
+			<allow pkg="org.apache.kafka.clients.consumer" exact-match="true"/>
 		</subpackage>
 	</subpackage>
 

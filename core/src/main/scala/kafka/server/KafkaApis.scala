@@ -499,9 +499,11 @@ class KafkaApis(val requestChannel: RequestChannel,
     val respHeader = new ResponseHeader(request.header.correlationId)
 
     // the callback for sending a join-group response
-    def sendResponseCallback(partitions: List[TopicAndPartition], generationId: Int, errorCode: Short) {
-      val partitionList = partitions.map(tp => new TopicPartition(tp.topic, tp.partition)).toBuffer
-      val responseBody = new JoinGroupResponse(errorCode, generationId, joinGroupRequest.consumerId, partitionList)
+    def sendResponseCallback(partitions: Map[Int, List[TopicAndPartition]], generationId: Int, errorCode: Short) {
+      val assignment = mutable.HashMap[Integer, java.util.List[TopicPartition]]()
+      for((group, parts) <- partitions)
+        assignment(group) = parts.map(tp => new TopicPartition(tp.topic, tp.partition))
+      val responseBody = new JoinGroupResponse(errorCode, generationId, joinGroupRequest.consumerId, assignment)
       requestChannel.sendResponse(new RequestChannel.Response(request, new BoundedByteBufferSend(respHeader, responseBody)))
     }
 

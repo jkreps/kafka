@@ -29,6 +29,7 @@ import org.apache.kafka.clients.producer.internals.FutureRecordMetadata;
 import org.apache.kafka.clients.producer.internals.Partitioner;
 import org.apache.kafka.clients.producer.internals.ProduceRequestResult;
 import org.apache.kafka.common.*;
+import org.apache.kafka.common.serialization.Serializer;
 
 
 /**
@@ -37,11 +38,13 @@ import org.apache.kafka.common.*;
  * By default this mock will synchronously complete each send call successfully. However it can be configured to allow
  * the user to control the completion of the call and supply an optional error for the producer to throw.
  */
-public class MockProducer implements Producer<byte[], byte[]> {
+public class MockProducer<K, V> implements Producer<K, V> {
 
     private final Cluster cluster;
+    private final Serializer<K> keySerializer;
+    private final Serializer<V> valSerializer;
     private final Partitioner partitioner = new Partitioner();
-    private final List<ProducerRecord<byte[], byte[]>> sent;
+    private final List<ProducerRecord<K, V>> sent;
     private final Deque<Completion> completions;
     private boolean autoComplete;
     private Map<TopicPartition, Long> offsets;
@@ -49,17 +52,24 @@ public class MockProducer implements Producer<byte[], byte[]> {
     /**
      * Create a mock producer
      * 
-     * @param cluster The cluster holding metadata for this producer
+     * @param cluster The cluster holding metadata for this producer, used for partitioning
+     * @param keySerializer The serializer used for serializing the key
+     * @param valSerializer The serializer used for serialing the value
      * @param autoComplete If true automatically complete all requests successfully and execute the callback. Otherwise
      *        the user must call {@link #completeNext()} or {@link #errorNext(RuntimeException)} after
      *        {@link #send(ProducerRecord) send()} to complete the call and unblock the @{link
      *        java.util.concurrent.Future Future&lt;RecordMetadata&gt;} that is returned.
      */
-    public MockProducer(Cluster cluster, boolean autoComplete) {
+    public MockProducer(Cluster cluster, 
+                        Serializer<K> keySerializer, 
+                        Serializer<V> valSerializer, 
+                        boolean autoComplete) {
         this.cluster = cluster;
+        this.keySerializer = keySerializer;
+        this.valSerializer = valSerializer;
         this.autoComplete = autoComplete;
         this.offsets = new HashMap<TopicPartition, Long>();
-        this.sent = new ArrayList<ProducerRecord<byte[], byte[]>>();
+        this.sent = new ArrayList<ProducerRecord<K, V>>();
         this.completions = new ArrayDeque<Completion>();
     }
 
@@ -69,7 +79,7 @@ public class MockProducer implements Producer<byte[], byte[]> {
      * Equivalent to {@link #MockProducer(Cluster, boolean) new MockProducer(null, autoComplete)}
      */
     public MockProducer(boolean autoComplete) {
-        this(Cluster.empty(), autoComplete);
+        this(Cluster.empty(), null, null, autoComplete);
     }
 
     /**
@@ -87,7 +97,7 @@ public class MockProducer implements Producer<byte[], byte[]> {
      * @see #history()
      */
     @Override
-    public synchronized Future<RecordMetadata> send(ProducerRecord<byte[], byte[]> record) {
+    public synchronized Future<RecordMetadata> send(ProducerRecord<K, V> record) {
         return send(record, null);
     }
 
@@ -97,10 +107,14 @@ public class MockProducer implements Producer<byte[], byte[]> {
      * @see #history()
      */
     @Override
-    public synchronized Future<RecordMetadata> send(ProducerRecord<byte[], byte[]> record, Callback callback) {
+    public synchronized Future<RecordMetadata> send(ProducerRecord<K, V> record, Callback callback) {
         int partition = 0;
-        if (this.cluster.partitionsForTopic(record.topic()) != null)
-            partition = partitioner.partition(record.topic(), record.key(), record.partition(), this.cluster);
+        if(keySerializer != null && valSerializer != null) {
+            byte[] keyBytes = keySerializer.serialize(record.topic(), record.key());
+            valSerializer.serialize(record.topic(), record.value());
+            if (this.cluster.partitionsForTopic(record.topic()) != null)
+                partition = partitioner.partition(record.topic(), keyBytes, record.partition(), this.cluster);
+        }
         ProduceRequestResult result = new ProduceRequestResult();
         FutureRecordMetadata future = new FutureRecordMetadata(result, 0);
         TopicPartition topicPartition = new TopicPartition(record.topic(), partition);
@@ -149,8 +163,8 @@ public class MockProducer implements Producer<byte[], byte[]> {
     /**
      * Get the list of sent records since the last call to {@link #clear()}
      */
-    public synchronized List<ProducerRecord<byte[], byte[]>> history() {
-        return new ArrayList<ProducerRecord<byte[], byte[]>>(this.sent);
+    public synchronized List<ProducerRecord<K, V>> history() {
+        return new ArrayList<ProducerRecord<K, V>>(this.sent);
     }
 
     /**

@@ -125,7 +125,7 @@ public class CoordinatorTest {
 
         // illegal_generation will cause re-partition
         subscriptions.subscribe(topicName);
-        subscriptions.changePartitionAssignment(Collections.singletonList(tp));
+        subscriptions.changePartitionAssignment(Collections.singletonMap(0, Collections.singletonList(tp)));
 
         time.sleep(sessionTimeoutMs);
         coordinator.maybeHeartbeat(time.milliseconds()); // should send out the heartbeat
@@ -155,9 +155,10 @@ public class CoordinatorTest {
         client.prepareResponse(consumerMetadataResponse(node, Errors.NONE.code()));
 
         // normal join group
-        client.prepareResponse(joinGroupResponse(1, "consumer", Collections.singletonList(tp), Errors.NONE.code()));
-        assertEquals(Collections.singletonList(tp),
-            coordinator.assignPartitions(Collections.singletonList(topicName), time.milliseconds()));
+        Map<Integer, List<TopicPartition>> assignment = Collections.singletonMap(0, Collections.singletonList(tp));
+        client.prepareResponse(joinGroupResponse(1, "consumer", assignment, Errors.NONE.code()));
+        assertEquals(assignment,
+                     coordinator.assignPartitions(Collections.singletonList(topicName), time.milliseconds()));
         assertEquals(0, client.inFlightRequestCount());
     }
 
@@ -166,11 +167,12 @@ public class CoordinatorTest {
         client.prepareResponse(consumerMetadataResponse(node, Errors.NONE.code()));
 
         // diconnected from original coordinator will cause re-discover and join again
-        client.prepareResponse(joinGroupResponse(1, "consumer", Collections.singletonList(tp), Errors.NONE.code()), true);
+        Map<Integer, List<TopicPartition>> assignment = Collections.singletonMap(0, Collections.singletonList(tp));
+        client.prepareResponse(joinGroupResponse(1, "consumer", assignment, Errors.NONE.code()), true);
         client.prepareResponse(consumerMetadataResponse(node, Errors.NONE.code()));
-        client.prepareResponse(joinGroupResponse(1, "consumer", Collections.singletonList(tp), Errors.NONE.code()));
-        assertEquals(Collections.singletonList(tp),
-            coordinator.assignPartitions(Collections.singletonList(topicName), time.milliseconds()));
+        client.prepareResponse(joinGroupResponse(1, "consumer", assignment, Errors.NONE.code()));
+        assertEquals(assignment,
+                     coordinator.assignPartitions(Collections.singletonList(topicName), time.milliseconds()));
         assertEquals(0, client.inFlightRequestCount());
     }
 
@@ -266,8 +268,8 @@ public class CoordinatorTest {
         return response.toStruct();
     }
 
-    private Struct joinGroupResponse(int generationId, String consumerId, List<TopicPartition> assignedPartitions, short error) {
-        JoinGroupResponse response = new JoinGroupResponse(error, generationId, consumerId, assignedPartitions);
+    private Struct joinGroupResponse(int generationId, String consumerId, Map<Integer, List<TopicPartition>> assignment, short error) {
+        JoinGroupResponse response = new JoinGroupResponse(error, generationId, consumerId, assignment);
         return response.toStruct();
     }
 

@@ -21,6 +21,19 @@ package org.apache.kafka.common.utils;
  */
 public interface Time {
 
+    public static long NS_PER_US = 1000;
+    public static long US_PER_MS = 1000;
+    public static long MS_PER_SEC = 1000;
+    public static long NS_PER_MS = NS_PER_US * US_PER_MS;
+    public static long NS_PER_SEC = NS_PER_MS * MS_PER_SEC;
+    public static long US_PER_SEC = US_PER_MS * MS_PER_SEC;
+    public static long SECS_PER_MIN = 60;
+    public static long MINS_PER_HOUR = 60;
+    public static long HOURS_PER_DAY = 24;
+    public static long SECS_PER_HOUR = SECS_PER_MIN * MINS_PER_HOUR;
+    public static long SECS_PER_DAY = SECS_PER_HOUR * HOURS_PER_DAY;
+    public static long MINS_PER_DAY = MINS_PER_HOUR * HOURS_PER_DAY;
+    
     /**
      * The current time in milliseconds
      */

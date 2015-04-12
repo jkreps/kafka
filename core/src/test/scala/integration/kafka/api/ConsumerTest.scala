@@ -179,11 +179,11 @@ class ConsumerTest extends IntegrationTestHarness with Logging {
   private class TestConsumerReassignmentCallback extends ConsumerRebalanceCallback {
     var callsToAssigned = 0
     var callsToRevoked = 0
-    def onPartitionsAssigned(consumer: Consumer[_,_], partitions: java.util.Collection[TopicPartition]) {
+    def onPartitionsAssigned(consumer: Consumer[_,_], assignment: java.util.Map[java.lang.Integer, java.util.List[TopicPartition]]) {
       info("onPartitionsAssigned called.")
       callsToAssigned += 1
     }
-    def onPartitionsRevoked(consumer: Consumer[_,_], partitions: java.util.Collection[TopicPartition]) {
+    def onPartitionsRevoked(consumer: Consumer[_,_], assignment: java.util.Map[java.lang.Integer, java.util.List[TopicPartition]]) {
       info("onPartitionsRevoked called.")
       callsToRevoked += 1
     } 

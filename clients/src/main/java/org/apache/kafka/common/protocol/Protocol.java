@@ -361,8 +361,9 @@ public class Protocol {
                                                                             STRING,
                                                                             "The strategy for the coordinator to assign partitions."));
 
-    public static final Schema JOIN_GROUP_RESPONSE_TOPIC_V0 = new Schema(new Field("topic", STRING),
-                                                                         new Field("partitions", new ArrayOf(INT32)));
+    public static final Schema JOIN_GROUP_RESPONSE_GROUPING_V0 = new Schema(new Field("grouping_id", INT32),
+                                                                            new Field("partitions", new ArrayOf(new Schema(new Field("topic", STRING),
+                                                                                                                           new Field("partition", INT32)))));
     public static final Schema JOIN_GROUP_RESPONSE_V0 = new Schema(new Field("error_code", INT16),
                                                                    new Field("group_generation_id",
                                                                              INT32,
@@ -370,8 +371,8 @@ public class Protocol {
                                                                    new Field("consumer_id",
                                                                              STRING,
                                                                              "The consumer id assigned by the group coordinator."),
-                                                                   new Field("assigned_partitions",
-                                                                             new ArrayOf(JOIN_GROUP_RESPONSE_TOPIC_V0)));
+                                                                   new Field("assignment",
+                                                                             new ArrayOf(JOIN_GROUP_RESPONSE_GROUPING_V0)));
 
     public static final Schema[] JOIN_GROUP_REQUEST = new Schema[] {JOIN_GROUP_REQUEST_V0};
     public static final Schema[] JOIN_GROUP_RESPONSE = new Schema[] {JOIN_GROUP_RESPONSE_V0};

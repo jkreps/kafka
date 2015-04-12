@@ -17,7 +17,6 @@ import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.ProtoUtils;
 import org.apache.kafka.common.protocol.types.Schema;
 import org.apache.kafka.common.protocol.types.Struct;
-import org.apache.kafka.common.utils.CollectionUtils;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
@@ -52,7 +51,7 @@ public class ProduceResponse extends AbstractRequestResponse {
 
     public ProduceResponse(Map<TopicPartition, PartitionResponse> responses) {
         super(new Struct(CURRENT_SCHEMA));
-        Map<String, Map<Integer, PartitionResponse>> responseByTopic = CollectionUtils.groupDataByTopic(responses);
+        Map<String, Map<Integer, PartitionResponse>> responseByTopic = RequestUtils.groupDataByTopic(responses);
         List<Struct> topicDatas = new ArrayList<Struct>(responseByTopic.size());
         for (Map.Entry<String, Map<Integer, PartitionResponse>> entry : responseByTopic.entrySet()) {
             Struct topicData = struct.instance(RESPONSES_KEY_NAME);

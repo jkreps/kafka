@@ -24,6 +24,7 @@ import org.junit.Test;
 import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -119,7 +120,10 @@ public class RequestResponseTest {
     }
 
     private AbstractRequestResponse createJoinGroupResponse() {
-        return new JoinGroupResponse(Errors.NONE.code(), 1, "consumer1", Arrays.asList(new TopicPartition("test11", 1), new TopicPartition("test2", 1)));
+        Map<Integer, List<TopicPartition>> assignment = new HashMap<Integer, List<TopicPartition>>();
+        assignment.put(0, Collections.singletonList(new TopicPartition("test11", 1)));
+        assignment.put(1, Collections.singletonList(new TopicPartition("test2", 1)));
+        return new JoinGroupResponse(Errors.NONE.code(), 1, "consumer1", assignment);
     }
 
     private AbstractRequest createListOffsetRequest() {

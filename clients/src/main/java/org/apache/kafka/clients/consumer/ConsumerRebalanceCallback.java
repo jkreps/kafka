@@ -12,7 +12,8 @@
  */
 package org.apache.kafka.clients.consumer;
 
-import java.util.Collection;
+import java.util.List;
+import java.util.Map;
 
 import org.apache.kafka.common.TopicPartition;
 
@@ -77,7 +78,7 @@ public interface ConsumerRebalanceCallback {
      * @param partitions The list of partitions that are now assigned to the consumer (may include partitions previously
      *            assigned to the consumer)
      */
-    public void onPartitionsAssigned(Consumer<?, ?> consumer, Collection<TopicPartition> partitions);
+    public void onPartitionsAssigned(Consumer<?, ?> consumer, Map<Integer, List<TopicPartition>> assignment);
 
     /**
      * A callback method the user can implement to provide handling of offset commits to a customized store on the start
@@ -89,5 +90,5 @@ public interface ConsumerRebalanceCallback {
      * 
      * @param partitions The list of partitions that were assigned to the consumer on the last rebalance
      */
-    public void onPartitionsRevoked(Consumer<?, ?> consumer, Collection<TopicPartition> partitions);
+    public void onPartitionsRevoked(Consumer<?, ?> consumer, Map<Integer, List<TopicPartition>> assignment);
 }

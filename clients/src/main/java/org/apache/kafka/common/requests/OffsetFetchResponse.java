@@ -24,7 +24,6 @@ import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.protocol.ProtoUtils;
 import org.apache.kafka.common.protocol.types.Schema;
 import org.apache.kafka.common.protocol.types.Struct;
-import org.apache.kafka.common.utils.CollectionUtils;
 
 public class OffsetFetchResponse extends AbstractRequestResponse {
     
@@ -74,7 +73,7 @@ public class OffsetFetchResponse extends AbstractRequestResponse {
     public OffsetFetchResponse(Map<TopicPartition, PartitionData> responseData) {
         super(new Struct(CURRENT_SCHEMA));
 
-        Map<String, Map<Integer, PartitionData>> topicsData = CollectionUtils.groupDataByTopic(responseData);
+        Map<String, Map<Integer, PartitionData>> topicsData = RequestUtils.groupDataByTopic(responseData);
 
         List<Struct> topicArray = new ArrayList<Struct>();
         for (Map.Entry<String, Map<Integer, PartitionData>> entries : topicsData.entrySet()) {

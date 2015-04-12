@@ -71,19 +71,19 @@ public class UtilsTest {
 
     private void subTest(ByteBuffer buffer) {
         // The first byte should be 'A'
-        assertEquals('A', (Utils.readBytes(buffer, 0, 1))[0]);
+        assertEquals('A', (char) (Utils.readBytes(buffer, 0, 1))[0]);
 
         // The offset is 2, so the first 2 bytes should be skipped.
         byte[] results = Utils.readBytes(buffer, 2, 3);
-        assertEquals('y', results[0]);
-        assertEquals(' ', results[1]);
-        assertEquals('S', results[2]);
+        assertEquals('y', (char) results[0]);
+        assertEquals(' ', (char) results[1]);
+        assertEquals('S', (char) results[2]);
         assertEquals(3, results.length);
 
         // test readBytes without offset and length specified.
         results = Utils.readBytes(buffer);
-        assertEquals('A', results[0]);
-        assertEquals('t', results[buffer.limit() - 1]);
+        assertEquals('A', (char) results[0]);
+        assertEquals('t', (char) results[buffer.limit() - 1]);
         assertEquals(buffer.limit(), results.length);
     }
 

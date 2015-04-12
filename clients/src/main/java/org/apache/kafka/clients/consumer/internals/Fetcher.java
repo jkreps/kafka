@@ -256,8 +256,8 @@ public class Fetcher<K, V> {
         Map<Integer, Map<TopicPartition, FetchRequest.PartitionData>> fetchable = new HashMap<Integer, Map<TopicPartition, FetchRequest.PartitionData>>();
         for (TopicPartition partition : subscriptions.assignedPartitions()) {
             Node node = cluster.leaderFor(partition);
-            // if there is a leader and no in-flight requests, issue a new fetch
-            if (node != null && this.client.inFlightRequestCount(node.id()) == 0) {
+            // if there is a leader and no in-flight requests and the partition isn't paused, issue a new fetch
+            if (node != null && this.client.inFlightRequestCount(node.id()) == 0 && !subscriptions.paused().contains(partition)) {
                 Map<TopicPartition, FetchRequest.PartitionData> fetch = fetchable.get(node.id());
                 if (fetch == null) {
                     fetch = new HashMap<TopicPartition, FetchRequest.PartitionData>();

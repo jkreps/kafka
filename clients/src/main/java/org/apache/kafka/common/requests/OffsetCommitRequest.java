@@ -24,7 +24,6 @@ import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.protocol.ProtoUtils;
 import org.apache.kafka.common.protocol.types.Schema;
 import org.apache.kafka.common.protocol.types.Struct;
-import org.apache.kafka.common.utils.CollectionUtils;
 
 /**
  * This wrapper supports both v0 and v1 of OffsetCommitRequest.
@@ -145,7 +144,7 @@ public class OffsetCommitRequest extends AbstractRequest {
     }
 
     private void initCommonFields(String groupId, Map<TopicPartition, PartitionData> offsetData) {
-        Map<String, Map<Integer, PartitionData>> topicsData = CollectionUtils.groupDataByTopic(offsetData);
+        Map<String, Map<Integer, PartitionData>> topicsData = RequestUtils.groupDataByTopic(offsetData);
 
         struct.set(GROUP_ID_KEY_NAME, groupId);
         List<Struct> topicArray = new ArrayList<Struct>();

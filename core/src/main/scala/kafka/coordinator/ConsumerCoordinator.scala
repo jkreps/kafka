@@ -109,7 +109,7 @@ class ConsumerCoordinator(val config: KafkaConfig,
                         topics: List[String],
                         sessionTimeoutMs: Int,
                         partitionAssignmentStrategy: String,
-                        responseCallback:(List[TopicAndPartition], Int, Short) => Unit ) {
+                        responseCallback:(Map[Int, List[TopicAndPartition]], Int, Short) => Unit ) {
 
     // if the group does not exist yet, create one
     if (!consumerGroupRegistries.contains(groupId))
@@ -143,8 +143,9 @@ class ConsumerCoordinator(val config: KafkaConfig,
         TopicAndPartition(topic, partition)
       })
     }.toList
-
-    responseCallback(partitions, 1 /* generation id */, Errors.NONE.code)
+    val assignment = partitions.zipWithIndex.map(e => (e._2, List(e._1))).toMap
+    
+    responseCallback(assignment, 1 /* generation id */, Errors.NONE.code)
 
     info("Handled join-group from consumer " + consumerId + " to group " + groupId)
   }

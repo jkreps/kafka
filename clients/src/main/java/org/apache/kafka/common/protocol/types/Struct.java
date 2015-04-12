@@ -75,10 +75,7 @@ public class Struct {
      * @throws SchemaException If no such field exists
      */
     public Object get(String name) {
-        Field field = schema.get(name);
-        if (field == null)
-            throw new SchemaException("No such field: " + name);
-        return getFieldOrDefault(field);
+        return getFieldOrDefault(schema.get(name));
     }
 
     /**
@@ -87,7 +84,7 @@ public class Struct {
      * @return Whether a field exists.
      */
     public boolean hasField(String name) {
-        return schema.get(name) != null;
+        return schema.hasField(name);
     }
 
     public Struct getStruct(Field field) {
@@ -168,8 +165,6 @@ public class Struct {
      */
     public Struct set(String name, Object value) {
         Field field = this.schema.get(name);
-        if (field == null)
-            throw new SchemaException("Unknown field: " + name);
         this.values[field.index] = value;
         return this;
     }
@@ -203,7 +198,7 @@ public class Struct {
      * @throws SchemaException If the given field is not a container type
      */
     public Struct instance(String field) {
-        return instance(schema.get(field));
+        return instance(this.schema.get(field));
     }
 
     /**
@@ -325,5 +320,5 @@ public class Struct {
         }
         return true;
     }
-
+    
 }

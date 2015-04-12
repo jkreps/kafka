@@ -115,7 +115,7 @@ public final class Coordinator {
      * @param now The current time
      * @return The assigned partition info
      */
-    public List<TopicPartition> assignPartitions(List<String> subscribedTopics, long now) {
+    public Map<Integer, List<TopicPartition>> assignPartitions(List<String> subscribedTopics, long now) {
 
         // send a join group request to the coordinator
         log.debug("(Re-)joining group {} with subscribed topics {}", groupId, subscribedTopics);
@@ -142,7 +142,7 @@ public final class Coordinator {
         this.sensors.partitionReassignments.record(time.milliseconds() - now);
 
         // return assigned partitions
-        return response.assignedPartitions();
+        return response.assignments();
     }
 
     /**
@@ -500,7 +500,7 @@ public final class Coordinator {
                 for (Map.Entry<TopicPartition, Short> entry : response.responseData().entrySet()) {
                     TopicPartition tp = entry.getKey();
                     short errorCode = entry.getValue();
-                    long offset = this.offsets.get(tp);
+                    Long offset = this.offsets.get(tp);
                     if (errorCode == Errors.NONE.code()) {
                         log.debug("Committed offset {} for partition {}", offset, tp);
                         subscriptions.committed(tp, offset);

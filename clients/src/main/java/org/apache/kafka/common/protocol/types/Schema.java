@@ -103,6 +103,13 @@ public class Schema extends Type {
     public Field get(int slot) {
         return this.fields[slot];
     }
+    
+    /**
+     * @return True if a field with the given name is present
+     */
+    public boolean hasField(String name) {
+        return this.fieldsByName.containsKey(name);
+    }
 
     /**
      * Get a field by its name
@@ -111,7 +118,10 @@ public class Schema extends Type {
      * @return The field
      */
     public Field get(String name) {
-        return this.fieldsByName.get(name);
+        Field field = this.fieldsByName.get(name);
+        if (field == null)
+            throw new SchemaException("Unknown field: " + name);
+        return field;
     }
 
     /**

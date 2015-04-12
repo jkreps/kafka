@@ -33,6 +33,12 @@ public class SubscriptionState {
 
     /* the list of partitions currently assigned */
     private final Set<TopicPartition> assignedPartitions;
+    
+    /* the assignment from the server */
+    private final Map<Integer, List<TopicPartition>> assignment;
+    
+    /* the list of partitions currently paused */
+    private final Set<TopicPartition> pausedPartitions;
 
     /* the offset exposed to the user */
     private final Map<TopicPartition, Long> consumed;
@@ -52,7 +58,9 @@ public class SubscriptionState {
     public SubscriptionState() {
         this.subscribedTopics = new HashSet<String>();
         this.subscribedPartitions = new HashSet<TopicPartition>();
+        this.assignment = new HashMap<Integer, List<TopicPartition>>();
         this.assignedPartitions = new HashSet<TopicPartition>();
+        this.pausedPartitions = new HashSet<TopicPartition>();
         this.consumed = new HashMap<TopicPartition, Long>();
         this.fetched = new HashMap<TopicPartition, Long>();
         this.committed = new HashMap<TopicPartition, Long>();
@@ -97,6 +105,18 @@ public class SubscriptionState {
         clearPartition(partition);
     }
     
+    public void pause(TopicPartition partition) {
+        this.pausedPartitions.add(partition);
+    }
+    
+    public void unpause(TopicPartition partition) {
+        this.pausedPartitions.remove(partition);
+    }
+    
+    public Set<TopicPartition> paused() {
+        return this.pausedPartitions;
+    }
+    
     private void clearPartition(TopicPartition tp) {
         this.assignedPartitions.remove(tp);
         this.committed.remove(tp);
@@ -106,6 +126,7 @@ public class SubscriptionState {
 
     public void clearAssignment() {
         this.assignedPartitions.clear();
+        this.assignment.clear();
         this.committed.clear();
         this.fetched.clear();
         this.needsPartitionAssignment = !subscribedTopics().isEmpty();
@@ -150,6 +171,10 @@ public class SubscriptionState {
     public Set<TopicPartition> assignedPartitions() {
         return this.assignedPartitions;
     }
+    
+    public Map<Integer, List<TopicPartition>> assignment() {
+        return this.assignment;
+    }
 
     public boolean partitionsAutoAssigned() {
         return !this.subscribedTopics.isEmpty();
@@ -183,12 +208,15 @@ public class SubscriptionState {
         return this.needsPartitionAssignment;
     }
 
-    public void changePartitionAssignment(List<TopicPartition> assignments) {
-        for (TopicPartition tp : assignments)
-            if (!this.subscribedTopics.contains(tp.topic()))
-                throw new IllegalArgumentException("Assigned partition " + tp + " for non-subscribed topic.");
+    public void changePartitionAssignment(Map<Integer, List<TopicPartition>> assignments) {
+        for (List<TopicPartition> partitions: assignments.values())
+            for (TopicPartition tp : partitions)
+                if (!this.subscribedTopics.contains(tp.topic()))
+                    throw new IllegalArgumentException("Assigned partition " + tp + " for non-subscribed topic.");
         this.clearAssignment();
-        this.assignedPartitions.addAll(assignments);
+        this.assignment.putAll(assignments);
+        for (List<TopicPartition> partitions: assignments.values())
+            this.assignedPartitions.addAll(partitions);
         this.needsPartitionAssignment = false;
     }
 

@@ -511,7 +511,7 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
      * The set of partitions currently assigned to this consumer. If subscription happened by directly subscribing to
      * partitions using {@link #subscribe(TopicPartition...)} then this will simply return the list of partitions that
      * were subscribed to. If subscription was done by specifying only the topic using {@link #subscribe(String...)}
-     * then this will give the set of topics currently assigned to the consumer (which may be none if the assignment
+     * then this will give the set of partitions currently assigned to the consumer (which may be none if the assignment
      * hasn't happened yet, or the partitions are in the process of getting reassigned).
      */
     public synchronized Set<TopicPartition> subscriptions() {
@@ -574,7 +574,7 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
     }
 
     /**
-     * Unsubscribe from the specific topic partitions. records for these partitions will not be returned from the next
+     * Unsubscribe from the specific topic partitions. Records for these partitions will not be returned from the next
      * {@link #poll(long) poll()} onwards
      * 
      * @param partitions Partitions to unsubscribe from
@@ -585,6 +585,40 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
         // throw an exception if the partition was never subscribed to
         for (TopicPartition partition : partitions)
             this.subscriptions.unsubscribe(partition);
+    }
+    
+    /**
+     * Pause fetching from the given partition. This will not prevent previously issued fetch requests from
+     * returning records but will prevent future fetch requests from being issued for this partition.
+     * <p>
+     * This method allows the consumer to subscribe to a topic but temporarily suppress reads from
+     * one or more partitions without relinquishing it's subscription.
+     * 
+     * @param partitions Partitions to pause
+     */
+    public synchronized void pause(TopicPartition... partitions) {
+        ensureNotClosed();
+        log.debug("Pause partitions(s): {}", Utils.join(partitions, ", "));
+        for (TopicPartition partition : partitions)
+            this.subscriptions.pause(partition);
+    }
+    
+    /**
+     * Unpause the given partitions if they are currently paused.
+     */
+    public synchronized void unpause(TopicPartition... partitions) {
+        ensureNotClosed();
+        log.debug("Unpause partitions(s): {}", Utils.join(partitions, ", "));
+        for (TopicPartition partition : partitions)
+            this.subscriptions.unpause(partition);
+    }
+    
+    /**
+     * Get the set of partitions that is currently paused
+     */
+    public synchronized Set<TopicPartition> paused() {
+        ensureNotClosed();
+        return this.subscriptions.paused();
     }
 
     /**
@@ -833,22 +867,23 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
      */
     private void reassignPartitions(long now) {
         // execute the user's callback before rebalance
-        log.debug("Revoking previously assigned partitions {}", this.subscriptions.assignedPartitions());
+        log.debug("Revoking previously assigned partitions {}", this.subscriptions.assignment());
         try {
-            this.rebalanceCallback.onPartitionsRevoked(this, this.subscriptions.assignedPartitions());
+            this.rebalanceCallback.onPartitionsRevoked(this, Collections.unmodifiableMap(this.subscriptions.assignment()));
         } catch (Exception e) {
             log.error("User provided callback " + this.rebalanceCallback.getClass().getName()
                 + " failed on partition revocation: ", e);
         }
 
         // get new assigned partitions from the coordinator
-        this.subscriptions.changePartitionAssignment(coordinator.assignPartitions(
-            new ArrayList<String>(this.subscriptions.subscribedTopics()), now));
+        Map<Integer, List<TopicPartition>> assignment = 
+                coordinator.assignPartitions(new ArrayList<String>(this.subscriptions.subscribedTopics()), now);
+        this.subscriptions.changePartitionAssignment(assignment);
 
         // execute the user's callback after rebalance
-        log.debug("Setting newly assigned partitions {}", this.subscriptions.assignedPartitions());
+        log.debug("Setting newly assigned partitions {}", this.subscriptions.assignment());
         try {
-            this.rebalanceCallback.onPartitionsAssigned(this, this.subscriptions.assignedPartitions());
+            this.rebalanceCallback.onPartitionsAssigned(this, Collections.unmodifiableMap(this.subscriptions.assignment()));
         } catch (Exception e) {
             log.error("User provided callback " + this.rebalanceCallback.getClass().getName()
                 + " failed on partition assignment: ", e);

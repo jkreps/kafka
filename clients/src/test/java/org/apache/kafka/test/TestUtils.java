@@ -80,5 +80,14 @@ public class TestUtils {
             b.append(LETTERS_AND_DIGITS.charAt(SEEDED_RANDOM.nextInt(LETTERS_AND_DIGITS.length())));
         return b.toString();
     }
+    
+    public static File tempDir() {
+        File f = null;
+        do {
+            f = new File(TestUtils.IO_TMP_DIR, TestUtils.randomString(10));
+        } while(f.exists());
+        f.mkdirs();
+        return f;
+    }
 
 }

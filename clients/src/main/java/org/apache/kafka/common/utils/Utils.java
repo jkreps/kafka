@@ -479,4 +479,24 @@ public class Utils {
     public static String readFileAsString(String path) throws IOException {
         return Utils.readFileAsString(path, Charset.defaultCharset());
     }
+    
+    /**
+     * Recursively delete the given file/directory and any subfiles (if any exist)
+     * 
+     * @param file The root file at which to begin deleting
+     */
+    public static void rm(File file) {
+        if (file == null) {
+            return;
+        } else if (file.isDirectory()) {
+            File[] files = file.listFiles();
+            if (files != null) {
+                for (File f : files)
+                    rm(f);
+            }
+            file.delete();
+        } else {
+            file.delete();
+        }
+    }
 }

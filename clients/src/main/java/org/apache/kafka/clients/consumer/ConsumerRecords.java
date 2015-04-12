@@ -17,6 +17,7 @@ import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.utils.AbstractIterator;
@@ -75,6 +76,42 @@ public class ConsumerRecords<K, V> implements Iterable<ConsumerRecord<K, V>> {
             count += recs.size();
         return count;
     }
+    
+    public Set<TopicPartition> partitions() {
+        return this.records.keySet();
+    }
+
+    @Override
+    public int hashCode() {
+        final int prime = 31;
+        int result = 1;
+        result = prime * result + ((records == null) ? 0 : records.hashCode());
+        return result;
+    }
+
+    @Override
+    public String toString() {
+        return "ConsumerRecords(records = " + records + ")";
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        if (this == obj)
+            return true;
+        if (obj == null)
+            return false;
+        if (getClass() != obj.getClass())
+            return false;
+        ConsumerRecords<?, ?> other = (ConsumerRecords<?, ?>) obj;
+        if (records == null) {
+            if (other.records != null)
+                return false;
+        } else if (!records.equals(other.records))
+            return false;
+        return true;
+    }
+
+
 
     private static class ConcatenatedIterable<K, V> implements Iterable<ConsumerRecord<K, V>> {
 

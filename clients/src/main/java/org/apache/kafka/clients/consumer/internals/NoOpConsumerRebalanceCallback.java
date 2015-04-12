@@ -13,7 +13,8 @@
 
 package org.apache.kafka.clients.consumer.internals;
 
-import java.util.Collection;
+import java.util.List;
+import java.util.Map;
 
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRebalanceCallback;
@@ -22,9 +23,9 @@ import org.apache.kafka.common.TopicPartition;
 public class NoOpConsumerRebalanceCallback implements ConsumerRebalanceCallback {
 
     @Override
-    public void onPartitionsAssigned(Consumer<?, ?> consumer, Collection<TopicPartition> partitions) {}
+    public void onPartitionsAssigned(Consumer<?, ?> consumer, Map<Integer, List<TopicPartition>> assignment) {}
 
     @Override
-    public void onPartitionsRevoked(Consumer<?, ?> consumer, Collection<TopicPartition> partitions) {}
+    public void onPartitionsRevoked(Consumer<?, ?> consumer, Map<Integer, List<TopicPartition>> assignment) {}
 
 }

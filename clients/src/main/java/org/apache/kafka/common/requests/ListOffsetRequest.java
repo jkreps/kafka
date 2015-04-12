@@ -22,7 +22,6 @@ import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.protocol.ProtoUtils;
 import org.apache.kafka.common.protocol.types.Schema;
 import org.apache.kafka.common.protocol.types.Struct;
-import org.apache.kafka.common.utils.CollectionUtils;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
@@ -64,7 +63,7 @@ public class ListOffsetRequest extends AbstractRequest {
 
     public ListOffsetRequest(int replicaId, Map<TopicPartition, PartitionData> offsetData) {
         super(new Struct(CURRENT_SCHEMA));
-        Map<String, Map<Integer, PartitionData>> topicsData = CollectionUtils.groupDataByTopic(offsetData);
+        Map<String, Map<Integer, PartitionData>> topicsData = RequestUtils.groupDataByTopic(offsetData);
 
         struct.set(REPLICA_ID_KEY_NAME, replicaId);
         List<Struct> topicArray = new ArrayList<Struct>();

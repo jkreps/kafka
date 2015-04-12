@@ -68,7 +68,7 @@ public final class BufferPool {
      * @param metricGrpName logical group name for metrics
      * @param metricTags additional key/val attributes for metrics
      */
-    public BufferPool(long memory, int poolableSize, boolean blockOnExhaustion, Metrics metrics, Time time , String metricGrpName , Map<String, String> metricTags) {
+    public BufferPool(long memory, int poolableSize, boolean blockOnExhaustion, Metrics metrics, Time time, String metricGrpName, Map<String, String> metricTags) {
         this.poolableSize = poolableSize;
         this.blockOnExhaustion = blockOnExhaustion;
         this.lock = new ReentrantLock();

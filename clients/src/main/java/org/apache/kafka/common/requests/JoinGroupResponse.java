@@ -17,7 +17,6 @@ import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.ProtoUtils;
 import org.apache.kafka.common.protocol.types.Schema;
 import org.apache.kafka.common.protocol.types.Struct;
-import org.apache.kafka.common.utils.CollectionUtils;
 
 import java.nio.ByteBuffer;
 import java.util.*;
@@ -35,9 +34,11 @@ public class JoinGroupResponse extends AbstractRequestResponse {
 
     private static final String GENERATION_ID_KEY_NAME = "group_generation_id";
     private static final String CONSUMER_ID_KEY_NAME = "consumer_id";
-    private static final String ASSIGNED_PARTITIONS_KEY_NAME = "assigned_partitions";
+    private static final String ASSIGNMENT_KEY_NAME = "assignment";
     private static final String TOPIC_KEY_NAME = "topic";
     private static final String PARTITIONS_KEY_NAME = "partitions";
+    private static final String PARTITION_KEY_NAME = "partition";
+    private static final String GROUPING_ID_KEY_NAME = "grouping_id";
 
     public static final int UNKNOWN_GENERATION_ID = -1;
     public static final String UNKNOWN_CONSUMER_ID = "";
@@ -45,43 +46,56 @@ public class JoinGroupResponse extends AbstractRequestResponse {
     private final short errorCode;
     private final int generationId;
     private final String consumerId;
-    private final List<TopicPartition> assignedPartitions;
+    private final Map<Integer, List<TopicPartition>> assignments;
 
-    public JoinGroupResponse(short errorCode, int generationId, String consumerId, List<TopicPartition> assignedPartitions) {
+    public JoinGroupResponse(short errorCode, int generationId, String consumerId, Map<Integer, List<TopicPartition>> assignments) {
         super(new Struct(CURRENT_SCHEMA));
-
-        Map<String, List<Integer>> partitionsByTopic = CollectionUtils.groupDataByTopic(assignedPartitions);
 
         struct.set(ERROR_CODE_KEY_NAME, errorCode);
         struct.set(GENERATION_ID_KEY_NAME, generationId);
         struct.set(CONSUMER_ID_KEY_NAME, consumerId);
-        List<Struct> topicArray = new ArrayList<Struct>();
-        for (Map.Entry<String, List<Integer>> entries: partitionsByTopic.entrySet()) {
-            Struct topicData = struct.instance(ASSIGNED_PARTITIONS_KEY_NAME);
-            topicData.set(TOPIC_KEY_NAME, entries.getKey());
-            topicData.set(PARTITIONS_KEY_NAME, entries.getValue().toArray());
-            topicArray.add(topicData);
+        int i = 0;
+        Struct[] assigned = new Struct[assignments.size()];
+        for (Map.Entry<Integer, List<TopicPartition>> entry: assignments.entrySet()) {
+            Struct grouping = struct.instance(ASSIGNMENT_KEY_NAME);
+            grouping.set(GROUPING_ID_KEY_NAME, entry.getKey());
+            Struct[] partitions = new Struct[entry.getValue().size()];
+            int j = 0;
+            for (TopicPartition part: entry.getValue()) {
+                partitions[j] = grouping.instance(PARTITIONS_KEY_NAME);
+                partitions[j].set(TOPIC_KEY_NAME, part.topic());
+                partitions[j].set(PARTITION_KEY_NAME, part.partition());
+                j++;
+            }
+            grouping.set(PARTITIONS_KEY_NAME, partitions);
+            assigned[i++] = grouping;
         }
-        struct.set(ASSIGNED_PARTITIONS_KEY_NAME, topicArray.toArray());
-
+        struct.set(ASSIGNMENT_KEY_NAME, assigned);
         this.errorCode = errorCode;
         this.generationId = generationId;
         this.consumerId = consumerId;
-        this.assignedPartitions = assignedPartitions;
+        this.assignments = assignments;
     }
 
     public JoinGroupResponse(short errorCode) {
-        this(errorCode, UNKNOWN_GENERATION_ID, UNKNOWN_CONSUMER_ID, Collections.<TopicPartition>emptyList());
+        this(errorCode, UNKNOWN_GENERATION_ID, UNKNOWN_CONSUMER_ID, Collections.<Integer, List<TopicPartition>>emptyMap());
     }
 
     public JoinGroupResponse(Struct struct) {
         super(struct);
-        assignedPartitions = new ArrayList<TopicPartition>();
-        for (Object topicDataObj : struct.getArray(ASSIGNED_PARTITIONS_KEY_NAME)) {
+        this.assignments = new HashMap<Integer, List<TopicPartition>>();
+        for (Object topicDataObj : struct.getArray(ASSIGNMENT_KEY_NAME)) {
             Struct topicData = (Struct) topicDataObj;
-            String topic = topicData.getString(TOPIC_KEY_NAME);
-            for (Object partitionObj : topicData.getArray(PARTITIONS_KEY_NAME))
-                assignedPartitions.add(new TopicPartition(topic, (Integer) partitionObj));
+            Integer grouping = topicData.getInt(GROUPING_ID_KEY_NAME);
+            Object[] partitions = (Object[]) topicData.getArray(PARTITIONS_KEY_NAME);
+            List<TopicPartition> partsList = new ArrayList<TopicPartition>(partitions.length);
+            for (Object partObj: partitions) {
+                Struct part = (Struct) partObj;
+                String topic = part.getString(TOPIC_KEY_NAME);
+                Integer p = part.getInt(PARTITION_KEY_NAME);
+                partsList.add(new TopicPartition(topic, p));
+            }
+            this.assignments.put(grouping, partsList);
         }
         errorCode = struct.getShort(ERROR_CODE_KEY_NAME);
         generationId = struct.getInt(GENERATION_ID_KEY_NAME);
@@ -100,8 +114,8 @@ public class JoinGroupResponse extends AbstractRequestResponse {
         return consumerId;
     }
 
-    public List<TopicPartition> assignedPartitions() {
-        return assignedPartitions;
+    public Map<Integer, List<TopicPartition>> assignments() {
+        return assignments;
     }
 
     public static JoinGroupResponse parse(ByteBuffer buffer) {

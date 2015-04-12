@@ -12,8 +12,10 @@
  */
 package org.apache.kafka.clients.consumer;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -35,15 +37,23 @@ import org.apache.kafka.common.MetricName;
  */
 public class MockConsumer<K, V> implements Consumer<K, V> {
 
+    private final int fetchSize;
     private final Map<String, List<PartitionInfo>> partitions;
     private final SubscriptionState subscriptions;
-    private Map<TopicPartition, List<ConsumerRecord<K, V>>> records;
+    private Map<TopicPartition, Deque<ConsumerRecord<K, V>>> records;
+    private Map<TopicPartition, Long> endOffsets;
     private boolean closed;
-
+    
     public MockConsumer() {
+        this(10);
+    }
+
+    public MockConsumer(int fetchSize) {
+        this.fetchSize = fetchSize;
         this.subscriptions = new SubscriptionState();
         this.partitions = new HashMap<String, List<PartitionInfo>>();
-        this.records = new HashMap<TopicPartition, List<ConsumerRecord<K, V>>>();
+        this.records = new HashMap<TopicPartition, Deque<ConsumerRecord<K, V>>>();
+        this.endOffsets = new HashMap<TopicPartition, Long>();
         this.closed = false;
     }
     
@@ -77,32 +87,76 @@ public class MockConsumer<K, V> implements Consumer<K, V> {
         for (TopicPartition partition : partitions)
             this.subscriptions.unsubscribe(partition);
     }
+    
+    public synchronized void pause(TopicPartition... partitions) {
+        ensureNotClosed();
+        for (TopicPartition partition : partitions)
+            this.subscriptions.pause(partition);
+    }
+    
+    public synchronized void unpause(TopicPartition... partitions) {
+        ensureNotClosed();
+        for (TopicPartition partition : partitions)
+            this.subscriptions.pause(partition);
+    }
+    
+    public synchronized Set<TopicPartition> paused() {
+        ensureNotClosed();
+        return this.subscriptions.paused();
+    }
 
     @Override
     public synchronized ConsumerRecords<K, V> poll(long timeout) {
         ensureNotClosed();
         // update the consumed offset
-        for (Map.Entry<TopicPartition, List<ConsumerRecord<K, V>>> entry : this.records.entrySet()) {
-            List<ConsumerRecord<K, V>> recs = entry.getValue();
-            if (!recs.isEmpty())
-                this.subscriptions.consumed(entry.getKey(), recs.get(recs.size() - 1).offset());
+        int count = 0;
+        Map<TopicPartition, List<ConsumerRecord<K, V>>> consumed = new HashMap<TopicPartition, List<ConsumerRecord<K, V>>>();
+        for (Map.Entry<TopicPartition, Deque<ConsumerRecord<K, V>>> entry : this.records.entrySet()) {
+            TopicPartition part = entry.getKey();
+            Deque<ConsumerRecord<K, V>> recs = entry.getValue();
+            while (!recs.isEmpty()) {
+                if (!consumed.containsKey(part))
+                    consumed.put(part, new ArrayList<ConsumerRecord<K, V>>());
+                List<ConsumerRecord<K, V>> found = consumed.get(part);
+                ConsumerRecord<K, V> record = recs.pollFirst();
+                found.add(record);
+                this.subscriptions.consumed(part, record.offset() + 1);
+                count++;
+                if (count == this.fetchSize)
+                    return new ConsumerRecords<K,V>(consumed);
+            }
         }
-
-        ConsumerRecords<K, V> copy = new ConsumerRecords<K, V>(this.records);
-        this.records = new HashMap<TopicPartition, List<ConsumerRecord<K, V>>>();
-        return copy;
+        return new ConsumerRecords<K,V>(consumed);
     }
 
     public synchronized void addRecord(ConsumerRecord<K, V> record) {
         ensureNotClosed();
         TopicPartition tp = new TopicPartition(record.topic(), record.partition());
+        validateOffset(tp, record.offset());
         this.subscriptions.assignedPartitions().add(tp);
-        List<ConsumerRecord<K, V>> recs = this.records.get(tp);
+        this.endOffsets.put(tp, record.offset() + 1);
+        Deque<ConsumerRecord<K, V>> recs = this.records.get(tp);
         if (recs == null) {
-            recs = new ArrayList<ConsumerRecord<K, V>>();
+            recs = new ArrayDeque<ConsumerRecord<K, V>>();
             this.records.put(tp, recs);
         }
         recs.add(record);
+    }
+    
+    public synchronized int unconsumed() {
+        ensureNotClosed();
+        int count = 0;
+        for (Deque<ConsumerRecord<K, V>> recs : this.records.values())
+            count += recs.size();
+        return count;
+    }
+    
+    private void validateOffset(TopicPartition tp, long offset) {
+        if (this.endOffsets.containsKey(tp)) {
+            long endOffset = this.endOffsets.get(tp);
+            if (offset > endOffset)
+                throw new IllegalArgumentException("Invalid offset " + offset + " for record, greater than maximum offset " + endOffset);
+        }
     }
 
     @Override
@@ -139,13 +193,21 @@ public class MockConsumer<K, V> implements Consumer<K, V> {
     @Override
     public synchronized void seekToBeginning(TopicPartition... partitions) {
         ensureNotClosed();
-        throw new UnsupportedOperationException();
+        for (TopicPartition p: partitions)
+            subscriptions.consumed(p, 0L);
     }
 
     @Override
     public synchronized void seekToEnd(TopicPartition... partitions) {
         ensureNotClosed();
-        throw new UnsupportedOperationException();
+        for(TopicPartition p: partitions) {
+            if (this.endOffsets.containsKey(p)) {
+                long last = this.endOffsets.get(p);
+                subscriptions.consumed(p, last);
+            } else {
+                subscriptions.consumed(p, 0L);
+            }
+        }
     }
 
     @Override

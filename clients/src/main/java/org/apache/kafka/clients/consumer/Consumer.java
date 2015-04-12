@@ -52,6 +52,21 @@ public interface Consumer<K, V> extends Closeable {
      * @see KafkaConsumer#unsubscribe(TopicPartition...)
      */
     public void unsubscribe(TopicPartition... partitions);
+    
+    /**
+     * @see KafkaConsumer#pause(TopicPartition...)
+     */
+    public void pause(TopicPartition... partitions);
+    
+    /**
+     * @see KafkaConsumer#unpause(TopicPartition...)
+     */
+    public void unpause(TopicPartition... partitions);
+    
+    /**
+     * @see KafkaConsumer#paused()
+     */
+    public Set<TopicPartition> paused();
 
     /**
      * @see KafkaConsumer#poll(long)

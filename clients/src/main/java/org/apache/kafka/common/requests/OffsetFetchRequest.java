@@ -18,7 +18,6 @@ import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.protocol.ProtoUtils;
 import org.apache.kafka.common.protocol.types.Schema;
 import org.apache.kafka.common.protocol.types.Struct;
-import org.apache.kafka.common.utils.CollectionUtils;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
@@ -51,7 +50,7 @@ public class OffsetFetchRequest extends AbstractRequest {
     public OffsetFetchRequest(String groupId, List<TopicPartition> partitions) {
         super(new Struct(CURRENT_SCHEMA));
 
-        Map<String, List<Integer>> topicsData = CollectionUtils.groupDataByTopic(partitions);
+        Map<String, List<Integer>> topicsData = RequestUtils.groupDataByTopic(partitions);
 
         struct.set(GROUP_ID_KEY_NAME, groupId);
         List<Struct> topicArray = new ArrayList<Struct>();

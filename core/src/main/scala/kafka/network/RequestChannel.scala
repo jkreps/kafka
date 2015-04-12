@@ -71,6 +71,7 @@ object RequestChannel extends Logging {
     trace("Processor %d received request : %s".format(processor, requestObj))
 
     def updateRequestMetrics() {
+        try {
       val endTimeMs = SystemTime.milliseconds
       // In some corner cases, apiLocalCompleteTimeMs may not be set when the request completes since the remote
       // processing time is really small. In this case, use responseCompleteTimeMs as apiLocalCompleteTimeMs.
@@ -106,6 +107,9 @@ object RequestChannel extends Logging {
         requestLogger.debug("Completed request:%s from client %s;totalTime:%d,requestQueueTime:%d,localTime:%d,remoteTime:%d,responseQueueTime:%d,sendTime:%d"
           .format(requestObj.describe(false), remoteAddress, totalTime, requestQueueTime, apiLocalTime, apiRemoteTime, responseQueueTime, responseSendTime))
       }
+        } catch {
+          case e: Exception => e.printStackTrace();
+        }
     }
   }
   

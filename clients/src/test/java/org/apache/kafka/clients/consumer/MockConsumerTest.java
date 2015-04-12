@@ -30,9 +30,10 @@ public class MockConsumerTest {
     @Test
     public void testSimpleMock() {
         consumer.subscribe("topic");
+        TopicPartition tp = new TopicPartition("test", 0);
         assertEquals(0, consumer.poll(1000).count());
-        ConsumerRecord<String, String> rec1 = new ConsumerRecord<String, String>("test", 0, 0, "key1", "value1");
-        ConsumerRecord<String, String> rec2 = new ConsumerRecord<String, String>("test", 0, 1, "key2", "value2");
+        ConsumerRecord<String, String> rec1 = new ConsumerRecord<String, String>(tp.topic(), tp.partition(), 0, "key1", "value1");
+        ConsumerRecord<String, String> rec2 = new ConsumerRecord<String, String>(tp.topic(), tp.partition(), 1, "key2", "value2");
         consumer.addRecord(rec1);
         consumer.addRecord(rec2);
         ConsumerRecords<String, String> recs = consumer.poll(1);
@@ -40,9 +41,9 @@ public class MockConsumerTest {
         assertEquals(rec1, iter.next());
         assertEquals(rec2, iter.next());
         assertFalse(iter.hasNext());
-        assertEquals(1L, consumer.position(new TopicPartition("test", 0)));
+        assertEquals(2L, consumer.position(tp));
         consumer.commit(CommitType.SYNC);
-        assertEquals(1L, consumer.committed(new TopicPartition("test", 0)));
+        assertEquals(2L, consumer.committed(tp));
     }
 
 }
